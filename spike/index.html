@@ -134,7 +134,36 @@
   </section>
 
   <section>
-    <h2><span class="n">4</span> Vaciar el registro</h2>
+    <h2><span class="n">4</span> Carpeta central del rendidor</h2>
+    <p style="margin:0 0 4px;font-size:14px">
+      Una unidad compartida donde <b>solo los admins son miembros</b>, y adentro
+      una carpeta por persona compartida solo con ella. Se prueba con
+      <b>dos cuentas</b>: una que sea miembro de esa unidad (admin) y otra que
+      <b>no</b> lo sea (persona). Pide además el permiso
+      <code>drive.metadata.readonly</code>, para que la persona encuentre su
+      carpeta desde cualquier dispositivo.
+    </p>
+    <label>ID de la carpeta central <small>— raíz de la unidad compartida nueva: drive/folders/<b>ESTO</b></small></label>
+    <input id="cfgCentral" placeholder="0AbC...">
+    <label>Correo de la persona <small>— otra cuenta @inroprin.com que NO sea miembro de la unidad</small></label>
+    <input id="cfgPersona" placeholder="alguien@inroprin.com">
+    <div class="nota">
+      <b>Orden:</b>
+      (1) admin: «Entrar con los permisos nuevos» → <b>5A</b>.
+      (2) persona, en otro navegador o ventana privada: entrar → <b>5B</b>.
+      (3) persona otra vez, desde <b>otro</b> navegador o el teléfono → <b>5B</b>: no debe duplicar nada.
+      (4) admin → <b>5C</b>.
+      Todo lo que crea esta prueba lleva la marca <code>inroscanPrueba</code>,
+      distinta de la que usará la app, así que nunca aparece en los listados reales.
+    </div>
+    <button id="btnAmplio" onclick="entrarAmplio()">Entrar con los permisos nuevos</button>
+    <button id="btn5a" class="sec" onclick="prueba5A()" disabled>5A · Admin: dar de alta</button>
+    <button id="btn5b" class="sec" onclick="prueba5B()" disabled>5B · Persona: trabajar en su carpeta</button>
+    <button id="btn5c" class="sec" onclick="prueba5C()" disabled>5C · Admin: ver lo que hizo</button>
+  </section>
+
+  <section>
+    <h2><span class="n">5</span> Vaciar el registro</h2>
     <p style="margin:0 0 4px;font-size:14px">
       Borra las filas de datos de <b>Registro</b> y <b>Consolidados</b>, dejando
       los encabezados. Es para iterar: se reprocesa el mismo PDF hasta que la
@@ -150,7 +179,7 @@
   </section>
 
   <section>
-    <h2><span class="n">5</span> Resultado</h2>
+    <h2><span class="n">6</span> Resultado</h2>
     <pre id="log"><span class="i">Esperando…</span></pre>
   </section>
 </main>
@@ -158,7 +187,7 @@
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="https://apps.google.com/lib/api.js" async defer></script>
 <script>
-const CAMPOS = ["cfgClient", "cfgApiKey", "cfgCarpeta", "cfgHoja"];
+const CAMPOS = ["cfgClient", "cfgApiKey", "cfgCarpeta", "cfgHoja", "cfgCentral", "cfgPersona"];
 
 // Client ID del proyecto inroscan-contabilidad. No es secreto: en una app
 // estática viaja visible de todos modos. Lo que restringe el acceso es la
@@ -241,6 +270,10 @@ function entrar() {
     // verdad es la pantalla de consentimiento en modo «Internal» y los
     // permisos de la carpeta y la hoja.
     hd: "inroprin.com",
+    // Sin heredar permisos concedidos antes: si este token trajera también el
+    // de metadatos de la prueba 5, el listado de la prueba 4 devolvería todo
+    // lo visible y no solo lo que creó la app, y su veredicto mentiría.
+    include_granted_scopes: false,
     callback: async (resp) => {
       if (resp.error) return log(`Error al entrar: ${resp.error}`, "x");
       token = resp.access_token;
@@ -413,6 +446,393 @@ function prueba2B() {
       .build()
       .setVisible(true);
   });
+}
+
+// --- prueba 5: carpeta central del rendidor -------------------------------
+//
+// El rediseño del rendidor: una unidad compartida donde solo los admins son
+// miembros, y adentro una carpeta por persona compartida solo con ella. Antes
+// de construirlo se comprueba contra Google, con dos cuentas reales, cada cosa
+// que el diseño da por hecha. Ninguna está verificada todavía.
+//
+// Lo que crea esta prueba lleva la marca «inroscanPrueba» y no la que usará la
+// app, para que nunca aparezca en los listados reales.
+
+const MARCA = "inroscanPrueba";
+const EN_UNIDADES = "supportsAllDrives=true&includeItemsFromAllDrives=true";
+const DRIVE = "https://www.googleapis.com/drive/v3/files";
+const METADATOS = "https://www.googleapis.com/auth/drive.metadata.readonly";
+const ALCANCES_AMPLIOS = [
+  "https://www.googleapis.com/auth/drive.file",
+  METADATOS,
+  "https://www.googleapis.com/auth/spreadsheets",
+  "openid", "email",
+].join(" ");
+const PDFJS = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs";
+const PDFJS_WORKER = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs";
+
+// Token aparte del de las pruebas 2A–4: esas miden drive.file solo, y con el
+// permiso de metadatos el listado devolvería de más.
+let tokenAmplio = null;
+let correoAmplio = "";
+
+const comillas = (s) => String(s).replace(/['\\]/g, "\\$&");
+const marca = (valor) => `appProperties has { key='${MARCA}' and value='${comillas(valor)}' }`;
+const propiedad = (k, v) => `appProperties has { key='${k}' and value='${comillas(v)}' }`;
+
+function entrarAmplio() {
+  if (!cfg("cfgClient")) return log("Falta el Client ID.", "x");
+  guardar();
+  const cliente = google.accounts.oauth2.initTokenClient({
+    client_id: cfg("cfgClient"),
+    scope: ALCANCES_AMPLIOS,
+    hd: "inroprin.com",
+    callback: async (resp) => {
+      if (resp.error) return log(`Error al entrar: ${resp.error}`, "x");
+      // La pantalla de Google deja destildar permisos sueltos. Sin el de
+      // metadatos, la búsqueda fallaría por eso y no por lo que se mide.
+      if (!google.accounts.oauth2.hasGrantedAllScopes(resp, METADATOS)) {
+        return log("No se concedió el permiso de metadatos (drive.metadata.readonly). " +
+                   "Vuelve a entrar y deja marcadas todas las casillas.", "x");
+      }
+      tokenAmplio = resp.access_token;
+      const r = await fetch("https://www.googleapis.com/oauth2/v3/userinfo",
+        { headers: { Authorization: `Bearer ${tokenAmplio}` } });
+      if (!r.ok) return log(`No se pudo leer el perfil: ${await detallar(r)}`, "x");
+      correoAmplio = String((await r.json()).email).toLowerCase();
+      log(`Sesión con los permisos nuevos: ${correoAmplio}`, "v");
+      ["btn5a", "btn5b", "btn5c"].forEach(b => document.getElementById(b).disabled = false);
+    },
+  });
+  cliente.requestAccessToken();
+}
+
+async function pedir(url, opciones = {}) {
+  const cab = { Authorization: `Bearer ${tokenAmplio}`, ...(opciones.headers ?? {}) };
+  if (typeof opciones.body === "string") cab["Content-Type"] ??= "application/json";
+  const r = await fetch(url, { ...opciones, headers: cab });
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await detallar(r)}`);
+  return r;
+}
+const pedirJSON = async (url, opciones) => (await pedir(url, opciones)).json();
+
+/**
+ * Busca por appProperties probando los dos corpus de Drive.
+ *
+ * Una carpeta compartida desde una unidad de la que la persona no es miembro
+ * puede no salir en «allDrives». Cuál de los dos la devuelve es parte de lo
+ * que se mide, y se anota: la app usará ese.
+ */
+async function buscarPorMarca(filtros) {
+  const q = [...filtros, "trashed=false"].join(" and ");
+  const campos = encodeURIComponent("files(id,name,appProperties,webViewLink)");
+  for (const corpus of ["allDrives", "user"]) {
+    try {
+      const j = await pedirJSON(`${DRIVE}?q=${encodeURIComponent(q)}&corpora=${corpus}&${EN_UNIDADES}&fields=${campos}`);
+      if (j.files?.length) return { files: j.files, corpus };
+      log(`   corpus «${corpus}»: sin resultados`, "i");
+    } catch (e) {
+      log(`   corpus «${corpus}»: ${e.message}`, "i");
+    }
+  }
+  return { files: [], corpus: null };
+}
+
+async function listarHijos(idPadre, corpus = "allDrives") {
+  const q = `'${comillas(idPadre)}' in parents and trashed=false`;
+  const campos = encodeURIComponent("files(id,name,mimeType,appProperties,webViewLink)");
+  const j = await pedirJSON(`${DRIVE}?q=${encodeURIComponent(q)}&corpora=${corpus}&${EN_UNIDADES}&fields=${campos}&pageSize=100`);
+  return j.files ?? [];
+}
+
+function crearMarcado(nombre, mime, padre, props) {
+  return pedirJSON(`${DRIVE}?supportsAllDrives=true&fields=id,name,webViewLink`, {
+    method: "POST",
+    body: JSON.stringify({ name: nombre, mimeType: mime, parents: [padre], appProperties: props }),
+  });
+}
+
+function subirMarcado(blob, nombre, padre, props) {
+  const lim = "-----inroscan" + Math.random().toString(36).slice(2);
+  const cuerpo = new Blob([
+    `--${lim}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n`,
+    JSON.stringify({ name: nombre, parents: [padre], appProperties: props }),
+    `\r\n--${lim}\r\nContent-Type: ${blob.type || "application/octet-stream"}\r\n\r\n`,
+    blob,
+    `\r\n--${lim}--`,
+  ]);
+  return pedirJSON("https://www.googleapis.com/upload/drive/v3/files" +
+    "?uploadType=multipart&supportsAllDrives=true&fields=id,name,webViewLink", {
+    method: "POST",
+    headers: { "Content-Type": `multipart/related; boundary=${lim}` },
+    body: cuerpo,
+  });
+}
+
+async function huellaDe(blob) {
+  const h = await crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
+  return [...new Uint8Array(h)].map(b => b.toString(16).padStart(2, "0")).join("").slice(0, 32);
+}
+
+/** Una imagen de verdad, no un .txt: la app sube fotos. */
+function fotoDePrueba() {
+  const c = document.createElement("canvas");
+  c.width = 480; c.height = 220;
+  const g = c.getContext("2d");
+  g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height);
+  g.fillStyle = "#16222c"; g.font = "bold 22px sans-serif";
+  g.fillText("BOLETA DE PRUEBA · InroScan", 24, 60);
+  g.font = "15px monospace";
+  g.fillText(new Date().toISOString(), 24, 110);
+  g.fillText(`por ${correoAmplio}`, 24, 140);
+  return new Promise(r => c.toBlob(r, "image/png"));
+}
+
+async function prueba5A() {
+  const central = cfg("cfgCentral");
+  const persona = cfg("cfgPersona").toLowerCase();
+  if (!central || !persona) return log("Faltan el ID de la carpeta central o el correo de la persona.", "x");
+  if (persona === correoAmplio) {
+    return log("Ese correo es el tuyo. Para que la prueba mida algo, la persona tiene " +
+               "que ser OTRA cuenta, que no sea miembro de la unidad.", "x");
+  }
+  guardar();
+  log(`Prueba 5A — (admin ${correoAmplio}) dar de alta a ${persona}…`);
+
+  try {
+    const { files } = await buscarPorMarca([marca("persona"), propiedad("email", persona)]);
+    if (files.length > 1) log(`   ya hay ${files.length} carpetas para esa persona: se duplicó antes`, "x");
+    let carpeta = files[0];
+    const nueva = !carpeta;
+    if (carpeta) {
+      log(`   la carpeta ya existía («${carpeta.name}»): no se crea otra`, "v");
+    } else {
+      carpeta = await crearMarcado(`Prueba InroScan · ${persona}`,
+        CARPETA_MIME, central, { [MARCA]: "persona", email: persona });
+      log(`   carpeta creada: ${carpeta.name}`, "v");
+    }
+
+    try {
+      await pedir(`${DRIVE}/${carpeta.id}/permissions?supportsAllDrives=true&sendNotificationEmail=${nueva}`, {
+        method: "POST",
+        body: JSON.stringify({ type: "user", role: "writer", emailAddress: persona }),
+      });
+      log(`   compartida con ${persona} como editor${nueva ? "; Google le manda el aviso" : ""}`, "v");
+      log("VEREDICTO 5A: el admin puede crear la carpeta de la persona y " +
+          "compartírsela. Ahora entra con la cuenta de la persona y corre 5B.", "v");
+    } catch (e) {
+      log(`   compartir → ${e.message}`, "x");
+      log("VEREDICTO 5A: la carpeta se creó pero no se pudo compartir. Si el error " +
+          "habla de miembros o del dominio, hay que permitir el acceso a quienes no " +
+          "son miembros: en la consola de administración (Apps › Google Workspace › " +
+          "Drive y Documentos › Configuración de uso compartido) y en la propia " +
+          "unidad (Configuración de la unidad compartida).", "x");
+    }
+  } catch (e) {
+    log(`Prueba 5A → ${e.message}`, "x");
+  }
+}
+
+async function prueba5B() {
+  log(`Prueba 5B — (persona ${correoAmplio}) encontrar su carpeta y trabajar adentro…`);
+  const fallos = [];
+  // Cada paso informa por su cuenta y no detiene a los siguientes que no
+  // dependan de él: un solo intento tiene que dar el cuadro completo.
+  const paso = async (nombre, fn) => {
+    try { return await fn(); }
+    catch (e) { log(`   ${nombre} → ${e.message}`, "x"); fallos.push(nombre); return null; }
+  };
+
+  // 1 · encontrarla, sin saber su ID, desde cualquier dispositivo
+  const { files, corpus } = await buscarPorMarca([marca("persona"), propiedad("email", correoAmplio)]);
+  if (!files.length) {
+    log("VEREDICTO 5B: la persona NO encuentra su carpeta por appProperties. " +
+        "Revisa que 5A la haya compartido con este mismo correo. Si sí la compartió, " +
+        "el diseño necesita otra forma de que cada persona llegue a su carpeta.", "x");
+    return;
+  }
+  const persona = files[0];
+  log(`   1 · encontró su carpeta «${persona.name}» (corpus «${corpus}»)`, "v");
+  if (files.length > 1) log(`   ojo: hay ${files.length} carpetas para este correo`, "x");
+
+  // 2 · aislamiento: desde arriba de su carpeta no debe ver la de nadie más
+  await paso("aislamiento", async () => {
+    const { parents } = await pedirJSON(`${DRIVE}/${persona.id}?supportsAllDrives=true&fields=parents`);
+    if (!parents?.length) return log("   2 · Drive no devuelve la carpeta de arriba: no se puede medir desde acá", "i");
+    const vecinos = await listarHijos(parents[0], corpus);
+    if (vecinos.length <= 1) {
+      log("   2 · aislamiento: no ve las carpetas de otras personas", "v");
+    } else {
+      log(`   2 · AISLAMIENTO ROTO: ve ${vecinos.length} carpetas en la central ` +
+          `(${vecinos.map(v => v.name).join(", ")}). ¿Esta cuenta es miembro de la unidad?`, "x");
+      fallos.push("aislamiento");
+    }
+  });
+
+  // 3 · la rendición: la segunda corrida tiene que encontrarla, no duplicarla
+  const memo = await paso("subcarpeta", async () => {
+    const existente = (await listarHijos(persona.id, corpus))
+      .filter(f => f.appProperties?.[MARCA] === "rendicion");
+    if (existente.length > 1) {
+      log(`   3 · DUPLICADA: hay ${existente.length} rendiciones de prueba`, "x");
+      fallos.push("subcarpeta");
+    }
+    if (existente.length) {
+      log("   3 · encontró la rendición de una corrida anterior: no la duplicó", "v");
+      return existente[0];
+    }
+    const nueva = await crearMarcado("MEMO PRUEBA", CARPETA_MIME, persona.id,
+      { [MARCA]: "rendicion", numero: "PRUEBA" });
+    log("   3 · creó la rendición dentro de la carpeta del admin (drive.file alcanza)", "v");
+    return nueva;
+  });
+  if (!memo) return log("VEREDICTO 5B: no pudo crear dentro de su carpeta. Sin esto no hay rendidor.", "x");
+
+  // 4 · la hoja con una pestaña oculta, para medir después el PDF
+  const hoja = await paso("hoja", async () => {
+    const ya = (await listarHijos(memo.id, corpus)).find(f => f.appProperties?.[MARCA] === "hoja");
+    if (ya) { log("   4 · encontró la hoja de una corrida anterior", "v"); return ya; }
+
+    const h = await crearMarcado("RENDICION · PRUEBA", "application/vnd.google-apps.spreadsheet",
+      memo.id, { [MARCA]: "hoja" });
+    const API = `https://sheets.googleapis.com/v4/spreadsheets/${h.id}`;
+    await pedir(`${API}:batchUpdate`, {
+      method: "POST",
+      body: JSON.stringify({ requests: [
+        { updateSheetProperties: { properties: { sheetId: 0, title: "Rendición" }, fields: "title" } },
+        { addSheet: { properties: { title: "Comprobantes", hidden: true } } },
+      ] }),
+    });
+    await pedir(`${API}/values:batchUpdate`, {
+      method: "POST",
+      body: JSON.stringify({ valueInputOption: "RAW", data: [
+        { range: "Rendición!A1", values: [
+          ["RENDICIÓN DE PRUEBA"],
+          ["Es la única pestaña visible. Si el PDF trae más de una página, también exportó la oculta."],
+        ] },
+        { range: "Comprobantes!A1", values: Array.from({ length: 300 },
+          (_, i) => [`Fila oculta ${i + 1}`, "esto NO debería salir en el PDF"]) },
+      ] }),
+    });
+    log("   4 · creó la hoja con «Rendición» visible y «Comprobantes» oculta", "v");
+    return h;
+  });
+
+  // 5 · una foto con su huella como marca
+  const foto = await fotoDePrueba();
+  const huella = await huellaDe(foto);
+  const subida = await paso("foto", async () => {
+    const f = await subirMarcado(foto, `prueba_${Date.now()}.png`, memo.id, { [MARCA]: "foto", huella });
+    log("   5 · subió la foto con su huella", "v");
+    return f;
+  });
+
+  // 6 · volver a verla al listar, con su marca: es la memoria de lo ya subido
+  const hijos = await paso("relistar", async () => {
+    const lista = await listarHijos(memo.id, corpus);
+    const vista = subida && lista.find(f => f.id === subida.id);
+    if (vista?.appProperties?.huella === huella) {
+      log(`   6 · al listar ve ${lista.length} archivos, y la foto trae su huella`, "v");
+    } else {
+      log("   6 · la foto no aparece al listar, o aparece sin su marca", "x");
+      fallos.push("relistar");
+    }
+    return lista;
+  }) ?? [];
+
+  // 7 · descargarla: es lo que permite leer desde la PC lo subido en el teléfono
+  if (subida) await paso("descargar", async () => {
+    const bajada = await (await pedir(`${DRIVE}/${subida.id}?alt=media&supportsAllDrives=true`)).blob();
+    if (await huellaDe(bajada) === huella) {
+      log("   7 · la descargó y es idéntica a la que subió", "v");
+    } else {
+      log("   7 · la descargó pero no coincide con la subida", "x");
+      fallos.push("descargar");
+    }
+  });
+
+  // 8 · ¿puede mandar a la papelera? Informa, no falla: el diseño descarta sin borrar igual.
+  if (subida) {
+    try {
+      await pedir(`${DRIVE}/${subida.id}?supportsAllDrives=true`,
+        { method: "PATCH", body: JSON.stringify({ trashed: true }) });
+      await pedir(`${DRIVE}/${subida.id}?supportsAllDrives=true`,
+        { method: "PATCH", body: JSON.stringify({ trashed: false }) });
+      log("   8 · la persona SÍ puede mandar a la papelera (se restauró). Por eso la " +
+          "app marca «descartada» en vez de borrar: la trazabilidad no depende del permiso.", "i");
+    } catch (e) {
+      log(`   8 · la persona NO puede mandar a la papelera (${e.message.slice(0, 60)}…): ` +
+          "confirma que descartar tiene que ser una marca y no un borrado", "i");
+    }
+  }
+
+  // 9 · congelar una versión en PDF, y ver si se cuela la pestaña oculta
+  if (hoja) await paso("pdf", async () => {
+    const pdf = await (await pedir(`${DRIVE}/${hoja.id}/export?mimeType=application/pdf`)).blob();
+    const pdfjs = await import(PDFJS);
+    pdfjs.GlobalWorkerOptions.workerSrc = PDFJS_WORKER;
+    const doc = await pdfjs.getDocument({ data: new Uint8Array(await pdf.arrayBuffer()) }).promise;
+    log(doc.numPages === 1
+      ? "   9 · el PDF trae 1 página: la pestaña oculta queda fuera, se congela exportando directo"
+      : `   9 · el PDF trae ${doc.numPages} páginas: exporta también la oculta, ` +
+        "hay que congelar desde una copia con solo «Rendición»", doc.numPages === 1 ? "v" : "i");
+
+    const version = hijos.filter(f => f.appProperties?.[MARCA] === "pdf").length + 1;
+    const f = await subirMarcado(new Blob([pdf], { type: "application/pdf" }),
+      `Rendición PRUEBA · v${version}.pdf`, memo.id, { [MARCA]: "pdf", version: String(version) });
+    log(`   9 · congelada como v${version}: ${f.webViewLink}`, "v");
+  });
+
+  if (fallos.length) {
+    log(`VEREDICTO 5B: fallaron ${fallos.join(", ")}. El diseño se revisa antes de construir.`, "x");
+  } else {
+    log("VEREDICTO 5B: todo lo que el rendidor necesita funciona. Córrela otra vez " +
+        "desde OTRO navegador o el teléfono: tiene que encontrar la rendición y la hoja " +
+        "sin duplicarlas. Después, el admin corre 5C.", "v");
+  }
+}
+
+async function prueba5C() {
+  const persona = cfg("cfgPersona").toLowerCase();
+  if (!persona) return log("Falta el correo de la persona.", "x");
+  log(`Prueba 5C — (admin ${correoAmplio}) ver lo que hizo ${persona}…`);
+
+  try {
+    const { files } = await buscarPorMarca([marca("persona"), propiedad("email", persona)]);
+    if (!files.length) return log("No se encontró la carpeta de esa persona. Corre 5A primero.", "x");
+
+    let vistos = 0, marcados = 0, hoja = null;
+    const anotar = (f, sangria) => {
+      vistos++;
+      if (f.appProperties?.[MARCA]) marcados++;
+      if (f.appProperties?.[MARCA] === "hoja") hoja = f;
+      log(`${sangria}${f.name}  ${JSON.stringify(f.appProperties ?? {})}`, "i");
+    };
+    for (const f of await listarHijos(files[0].id)) {
+      anotar(f, "   ");
+      if (f.mimeType === CARPETA_MIME) (await listarHijos(f.id)).forEach(h => anotar(h, "      "));
+    }
+
+    if (!vistos) return log("VEREDICTO 5C: la carpeta está vacía. Corre 5B con la cuenta de la persona.", "x");
+
+    // El panel admin necesita además leer el contenido, no solo los nombres.
+    if (hoja) {
+      const j = await pedirJSON(`https://sheets.googleapis.com/v4/spreadsheets/${hoja.id}` +
+        `/values/${encodeURIComponent("Rendición!A1")}`);
+      log(`   lee la hoja de la persona: «${j.values?.[0]?.[0] ?? "(vacía)"}»`, "v");
+    }
+
+    if (marcados === vistos) {
+      log("VEREDICTO 5C: el admin ve todo lo que creó la persona, con sus marcas. " +
+          "El panel admin se puede armar sin abrir cada hoja.", "v");
+    } else {
+      log(`VEREDICTO 5C: el admin ve ${vistos} archivos pero solo ${marcados} con marca: ` +
+          "las appProperties que pone la persona no le llegan al admin. El panel " +
+          "tendría que leer las hojas en vez de las marcas.", "x");
+    }
+  } catch (e) {
+    log(`Prueba 5C → ${e.message}`, "x");
+  }
 }
 
 // --- vaciar el registro --------------------------------------------------
