@@ -411,14 +411,6 @@ function Ingreso({ aviso }: { aviso: string | null }) {
         </button>
         <p className="mt-3 text-center text-sm text-texto-3">Solo cuentas @inroprin.com</p>
 
-        <p className="mt-6 border-t border-borde pt-4 text-sm text-texto-2">
-          La herramienta anterior sigue en{" "}
-          {/* Fuera del basePath a propósito: es la app actual, no una ruta de esta. */}
-          <a className="font-medium text-acento-texto underline" href="/inroscan/">
-            /inroscan
-          </a>
-          .
-        </p>
       </section>
     </main>
   );

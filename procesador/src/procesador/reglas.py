@@ -3,7 +3,7 @@
 Gratis, instantánea y sin cuota. Cuando no alcanza, el comprobante queda
 incompleto y recién ahí entra la IA, y solo para los campos que faltan.
 
-Portado de app/campos.js de la versión anterior, donde cada regla se ajustó
+Portado de app/campos.js de la primera InroScan (retirada; en git hasta f0c3fcc), donde cada regla se ajustó
 contra comprobantes y consolidados reales. Los comentarios conservan el
 porqué: si una regla parece rara, casi siempre la motivó un caso concreto.
 """

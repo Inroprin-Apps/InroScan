@@ -1,6 +1,7 @@
 name: Publicar
 
-# Publica en GitHub Pages la app actual en la raíz y la nueva en /web/.
+# Publica InroScan en GitHub Pages bajo /inroscan/web/. La raíz solo
+# redirige ahí: la app anterior se retiró el 26-oct-2026.
 # Requiere que en Settings › Pages la fuente sea «GitHub Actions», y que el
 # entorno github-pages permita desplegar desde estas ramas.
 on:
@@ -37,10 +38,10 @@ jobs:
       - run: npm ci && npm run build
         working-directory: web
       # Solo lo que se sirve: ni migraciones, ni el procesador, ni documentos.
-      - name: Juntar las dos apps
+      - name: Armar el sitio
         run: |
           mkdir _sitio
-          cp -r index.html estilos.css app img spike _sitio/
+          cp sitio/index.html sitio/404.html _sitio/
           cp -r web/out _sitio/web
           touch _sitio/.nojekyll
       - uses: actions/configure-pages@v5
