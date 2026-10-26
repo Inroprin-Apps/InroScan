@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { tipoCorto } from "@/lib/comprobante";
 import { aNumero, soles, type cuentas } from "@/lib/cuentas";
 import type { cambiarRendicion } from "@/lib/datos";
@@ -59,10 +59,16 @@ export function Resumen({
   const k = (campo: string, valor: unknown) => `${campo}-${String(valor)}-${intento}`;
   const fuera = new Set(r.no_sustentan ?? []);
   const pasado = c.consumo != null && c.consumo > 100;
+  // En teléfono los datos de cabecera se pliegan: ahí lo primero es capturar.
+  const [verDatos, setVerDatos] = useState(false);
+  const plegable = verDatos ? "" : "hidden md:block";
 
   return (
     <section aria-label="Resumen" className="grid grid-cols-2 gap-x-6 gap-y-4 rounded-grande bg-superficie p-4 shadow-sm sm:px-5 lg:grid-cols-4">
-      <Dato titulo={r.tipo === "caja" ? "N° de caja" : "N° de memo"}>
+      <button type="button" onClick={() => setVerDatos((v) => !v)} className="col-span-full -mb-1 text-left text-[13px] font-semibold text-acento-texto md:hidden">
+        {verDatos ? "Ocultar datos de la rendición" : "Ver datos de la rendición"}
+      </button>
+      <Dato titulo={r.tipo === "caja" ? "N° de caja" : "N° de memo"} className={plegable}>
         {memoEditable ? (
           <Texto
             key={k("memo", r.numero_memo)}
@@ -75,7 +81,7 @@ export function Resumen({
           <span className="font-semibold">{(r.tipo === "caja" ? caja?.numero : r.numero_memo) ?? "—"}</span>
         )}
       </Dato>
-      <Dato titulo="Fecha de solicitud">
+      <Dato titulo="Fecha de solicitud" className={plegable}>
         {editable ? (
           <input
             key={k("fecha", r.fecha_solicitud)}
@@ -89,14 +95,14 @@ export function Resumen({
           <span className="font-semibold">{new Date(`${r.fecha_solicitud}T00:00`).toLocaleDateString("es-PE")}</span>
         )}
       </Dato>
-      <Dato titulo="Empresa">
+      <Dato titulo="Empresa" className={plegable}>
         <span className="font-semibold">{empresa}</span>
       </Dato>
-      <Dato titulo={r.tipo === "caja" ? "Administrador de caja" : "Responsable"}>
+      <Dato titulo={r.tipo === "caja" ? "Administrador de caja" : "Responsable"} className={plegable}>
         <span className="font-semibold">{responsable}</span>
       </Dato>
 
-      <div className="col-span-full h-px bg-borde" />
+      <div className={`col-span-full h-px bg-borde ${plegable}`} />
 
       <Dato titulo={r.tipo === "caja" ? "Fondo" : "Recibido"}>
         {memoEditable ? (
@@ -171,9 +177,9 @@ export function Resumen({
   );
 }
 
-function Dato({ titulo, children }: { titulo: string; children: ReactNode }) {
+function Dato({ titulo, children, className = "" }: { titulo: string; children: ReactNode; className?: string }) {
   return (
-    <div className="min-w-0">
+    <div className={`min-w-0 ${className}`}>
       <p className={rotulo}>{titulo}</p>
       <div className="mt-1 text-[15px] text-texto">{children}</div>
     </div>

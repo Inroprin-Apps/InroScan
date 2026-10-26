@@ -1,114 +1,90 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { quitar, usePendientes } from "@/lib/cola";
 import { herencia } from "@/lib/comprobante";
+import { useEnLinea } from "@/lib/conexion";
+import { capturar, reintentar } from "@/lib/envio";
 import type { Persona } from "@/lib/sesion";
-import { leer, subir } from "@/lib/subida";
 import type { Comprobante, Rendicion } from "@/lib/tipos";
-import { IconoCamara, IconoSubir } from "../iconos";
-import { botonPrincipal, botonSecundario } from "../piezas";
+import { IconoCamara, IconoSinSenal, IconoSubir } from "../iconos";
+import { Aviso, botonPrincipal, botonSecundario } from "../piezas";
 
-/** Un archivo en camino, mientras esta pantalla lo sube y espera su lectura. */
-export type Subida = {
-  clave: string;
-  nombre: string;
-  estado: "subiendo" | "leyendo" | "listo" | "error";
-  error?: string;
-};
-
-/** Cuántos archivos se suben y leen a la vez. */
-const EN_PARALELO = 3;
-
+/**
+ * Lo que se captura va primero a la cola del teléfono (lib/cola.ts) y de ahí
+ * al servidor: con señal sube enseguida; sin ella, espera.
+ */
 export function useSubidas({
   obtener,
   persona,
   filasActuales,
-  recargar,
-  alPedirLectura,
 }: {
   /** La rendición al momento de subir (la pantalla puede no tenerla todavía). */
   obtener: () => Rendicion | null;
   persona: Persona;
   filasActuales: () => Comprobante[];
-  recargar: () => Promise<void>;
-  alPedirLectura: (archivoId: string) => void;
 }) {
-  const [subidas, setSubidas] = useState<Subida[]>([]);
-
-  const cambiar = (clave: string, cambios: Partial<Subida>) =>
-    setSubidas((l) => l.map((s) => (s.clave === clave ? { ...s, ...cambios } : s)));
+  const [errores, setErrores] = useState<string[]>([]);
 
   const recibir = async (lista: File[]) => {
     const rendicion = obtener();
     if (!lista.length || !rendicion) return;
-    const nuevas = lista.map((f) => ({ archivo: f, clave: crypto.randomUUID() }));
-    setSubidas((l) => [
-      ...l.filter((s) => s.estado !== "listo"),
-      ...nuevas.map(({ archivo, clave }) => ({ clave, nombre: archivo.name, estado: "subiendo" as const })),
-    ]);
+    setErrores([]);
     // Lo que se hereda se calcula una vez: todo el lote va al mismo proyecto.
     const base = herencia(filasActuales(), rendicion.tipo, persona);
-    const cola = [...nuevas];
-    const trabajador = async () => {
-      for (let n = cola.shift(); n; n = cola.shift()) {
-        let archivoId: string | null = null;
-        try {
-          archivoId = await subir(rendicion.id, n.archivo, base);
-          alPedirLectura(archivoId);
-          cambiar(n.clave, { estado: "leyendo" });
-          await recargar(); // la fila aparece ya, con «Leyendo…»
-          await leer(archivoId);
-          cambiar(n.clave, { estado: "listo" });
-        } catch (e) {
-          cambiar(n.clave, { estado: "error", error: (e as Error).message });
-        }
-        if (archivoId) await recargar();
-      }
-    };
-    await Promise.all(Array.from({ length: Math.min(EN_PARALELO, nuevas.length) }, trabajador));
+    setErrores(await capturar(rendicion.id, lista, base));
   };
 
-  return { subidas, recibir };
+  return { errores, recibir };
 }
 
-/** «Subir fotos o PDF», y en teléfono además la cámara. */
-export function BotonesSubida({ onArchivos, grande }: { onArchivos: (l: File[]) => void; grande?: boolean }) {
+/**
+ * En PC, «Subir fotos o PDF»; en teléfono (telefono), la cámara primero y en
+ * grande, porque ahí se captura de pie y con una mano.
+ */
+export function BotonesSubida({ onArchivos, telefono }: { onArchivos: (l: File[]) => void; telefono?: boolean }) {
   const elegir = useRef<HTMLInputElement>(null);
   const camara = useRef<HTMLInputElement>(null);
   const tomar = (l: FileList | null) => l && onArchivos([...l]);
-  const alto = grande ? "h-14 text-base" : "";
   return (
     <>
-      <button type="button" onClick={() => camara.current?.click()} className={`flex items-center justify-center gap-2 md:hidden ${botonPrincipal} ${alto}`}>
-        <IconoCamara className="h-5 w-5" />
-        Tomar foto
-      </button>
-      <button type="button" onClick={() => elegir.current?.click()} className={`flex items-center justify-center gap-2 md:hidden ${botonSecundario} ${alto}`}>
-        Galería o PDF
-      </button>
-      <button type="button" onClick={() => elegir.current?.click()} className={`hidden items-center gap-2 md:flex ${botonPrincipal}`}>
-        <IconoSubir className="h-4 w-4" />
-        Subir fotos o PDF
-      </button>
-      <input
-        ref={camara}
-        type="file"
-        accept="image/*"
-        capture="environment"
-        className="hidden"
-        aria-label="Tomar foto"
-        onChange={(e) => {
-          tomar(e.target.files);
-          e.target.value = "";
-        }}
-      />
+      {telefono ? (
+        <>
+          <button type="button" onClick={() => camara.current?.click()} className={`flex h-14 items-center justify-center gap-2.5 text-base ${botonPrincipal}`}>
+            <IconoCamara className="h-6 w-6" />
+            Tomar foto
+          </button>
+          <button type="button" onClick={() => elegir.current?.click()} className={`h-14 text-sm ${botonSecundario}`}>
+            Galería o PDF
+          </button>
+        </>
+      ) : (
+        <button type="button" onClick={() => elegir.current?.click()} className={`flex items-center gap-2 ${botonPrincipal}`}>
+          <IconoSubir className="h-4 w-4" />
+          Subir fotos o PDF
+        </button>
+      )}
+      {telefono && (
+        <input
+          ref={camara}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          aria-label="Tomar foto"
+          onChange={(e) => {
+            tomar(e.target.files);
+            e.target.value = "";
+          }}
+        />
+      )}
       <input
         ref={elegir}
         type="file"
         accept="image/*,application/pdf"
         multiple
         className="hidden"
-        aria-label="Elegir fotos o PDF"
+        aria-label={telefono ? "Elegir de la galería o un PDF" : "Elegir fotos o PDF"}
         onChange={(e) => {
           tomar(e.target.files);
           e.target.value = "";
@@ -118,33 +94,45 @@ export function BotonesSubida({ onArchivos, grande }: { onArchivos: (l: File[]) 
   );
 }
 
-export function ListaSubidas({ subidas }: { subidas: Subida[] }) {
-  const activas = subidas.filter((s) => s.estado !== "listo");
-  const listos = subidas.filter((s) => s.estado === "listo").length;
-  const trabajando = subidas.some((s) => s.estado === "subiendo" || s.estado === "leyendo");
-  if (!activas.length && !listos) return null;
+/** Lo que todavía está en el teléfono, y por qué. */
+export function EnCola({ rendicionId, errores }: { rendicionId: string; errores: string[] }) {
+  const pendientes = usePendientes(rendicionId);
+  const enLinea = useEnLinea();
+  const bloqueados = pendientes.filter((p) => p.bloqueado);
+  const esperando = pendientes.filter((p) => !p.bloqueado);
+  if (!pendientes.length && !errores.length) return null;
   return (
-    <div className="rounded-chico bg-superficie-2 px-3 py-2 text-sm">
-      {activas.length > 0 && (
-        <ul className="space-y-1">
-          {activas.map((s) => (
-            <li key={s.clave} className="flex items-baseline justify-between gap-3">
-              <span className="truncate text-texto-2">{s.nombre}</span>
-              <span
-                className={`shrink-0 text-xs font-semibold ${s.estado === "error" ? "text-peligro" : "text-info"}`}
-                role={s.estado === "error" ? "alert" : "status"}
-              >
-                {s.estado === "subiendo" ? "Subiendo…" : s.estado === "leyendo" ? "Leyendo…" : s.error}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-      {listos > 0 && !trabajando && (
-        <p className="text-exito" role="status">
-          {listos === 1 ? "1 archivo leído." : `${listos} archivos leídos.`} Revisa lo que falte en la tabla.
-        </p>
-      )}
+    <div className="space-y-2">
+      {errores.map((e) => (
+        <Aviso key={e}>{e}</Aviso>
+      ))}
+      {esperando.length > 0 &&
+        (enLinea ? (
+          <p role="status" className="rounded-chico bg-info-suave px-4 py-3 text-sm text-info">
+            Subiendo {esperando.length} archivo{esperando.length === 1 ? "" : "s"}…
+          </p>
+        ) : (
+          <div role="status" className="flex gap-3 rounded-chico bg-aviso-suave px-4 py-3 text-sm text-aviso">
+            <IconoSinSenal className="mt-0.5 h-5 w-5 shrink-0" />
+            <p>
+              <b>Sin señal.</b> {esperando.length} foto{esperando.length === 1 ? "" : "s"} guardada{esperando.length === 1 ? "" : "s"} en
+              el teléfono: se suben y se leen solas cuando vuelva la conexión.
+              <span className="block text-[13px]">En iPhone, abre la app cuando tengas internet para que se suba todo.</span>
+            </p>
+          </div>
+        ))}
+      {bloqueados.map((p) => (
+        <div key={p.clave} className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-chico bg-peligro-suave px-4 py-2.5 text-sm text-peligro">
+          <span className="font-semibold">{p.nombre}:</span>
+          <span className="flex-1">{p.error}</span>
+          <button type="button" className="font-semibold underline" onClick={() => reintentar(p)}>
+            Reintentar
+          </button>
+          <button type="button" className="underline" onClick={() => quitar(p.clave)}>
+            Quitar
+          </button>
+        </div>
+      ))}
     </div>
   );
 }

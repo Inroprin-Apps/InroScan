@@ -12,14 +12,28 @@ let actual: Estado = { catalogos: null, error: null };
 let enCurso: Promise<void> | null = null;
 const oyentes = new Set<() => void>();
 
+const CLAVE = "inroscan.catalogos";
+
 export function recargarCatalogos(): Promise<void> {
   enCurso = leerCatalogos()
     .then(
       (catalogos) => {
         actual = { catalogos, error: null };
+        try {
+          localStorage.setItem(CLAVE, JSON.stringify(catalogos));
+        } catch {
+          // sin copia: sin señal no habrá listas
+        }
       },
       (e: Error) => {
-        actual = { ...actual, error: e.message };
+        // Sin señal sirven las listas de la última vez: cambian muy poco.
+        let copia: Catalogos | null = null;
+        try {
+          copia = JSON.parse(localStorage.getItem(CLAVE) ?? "null");
+        } catch {
+          copia = null;
+        }
+        actual = copia && /^Sin conexión/.test(e.message) ? { catalogos: copia, error: null } : { ...actual, error: e.message };
       },
     )
     .finally(() => {

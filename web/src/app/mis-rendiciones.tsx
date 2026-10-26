@@ -25,7 +25,7 @@ function resumen(r: RendicionConResumen) {
 }
 
 export function MisRendiciones({ persona }: { persona: Persona }) {
-  const { rendiciones, error } = useRendiciones();
+  const { rendiciones, error, sinSenal } = useRendiciones();
   const [pestana, setPestana] = useState<Pestana | null>(null);
   const [nueva, setNueva] = useState(false);
   const cerrarNueva = useCallback(() => setNueva(false), []);
@@ -59,6 +59,7 @@ export function MisRendiciones({ persona }: { persona: Persona }) {
       </header>
 
       {error && <Aviso>{error}</Aviso>}
+      {sinSenal && <Aviso tono="aviso">Sin conexión: ves lo último guardado en este equipo.</Aviso>}
       {rendiciones == null && !error && (
         <p className="text-texto-3" role="status">
           Cargando…

@@ -42,6 +42,16 @@ export function useSesion(): Sesion {
         .eq("id", uid)
         .single();
       if (!vigente) return;
+      // Sin señal no se sabe nada nuevo de la cuenta: se sigue con lo último
+      // conocido para poder capturar igual. Cerrar la sesión acá dejaría a la
+      // persona fuera justo cuando no puede volver a entrar.
+      if (error && sinSenal(error)) {
+        const guardada = leerGuardada(uid);
+        if (guardada) {
+          setSesion({ estado: "dentro", persona: guardada });
+          return;
+        }
+      }
       // Sin fila de persona (desactivada, o el alta falló) no hay nada que
       // mostrar: se cierra la sesión en vez de dejar una pantalla vacía. El
       // aviso se fija antes, porque el cierre dispara SIGNED_OUT y ese vuelve
@@ -51,6 +61,7 @@ export function useSesion(): Sesion {
         await cliente.auth.signOut();
         return;
       }
+      guardar(data);
       setSesion({ estado: "dentro", persona: data });
     };
 
@@ -73,6 +84,28 @@ export function useSesion(): Sesion {
   return sesion;
 }
 
+const CLAVE = "inroscan.persona";
+
+const sinSenal = (e: { message?: string }) =>
+  !navigator.onLine || /failed to fetch|networkerror|load failed/i.test(e.message ?? "");
+
+function guardar(p: Persona) {
+  try {
+    localStorage.setItem(CLAVE, JSON.stringify(p));
+  } catch {
+    // sin almacenamiento: sin modo sin señal
+  }
+}
+
+function leerGuardada(uid: string): Persona | null {
+  try {
+    const p = JSON.parse(localStorage.getItem(CLAVE) ?? "null") as Persona | null;
+    return p?.id === uid ? p : null;
+  } catch {
+    return null;
+  }
+}
+
 export function entrar() {
   return supabase().auth.signInWithOAuth({
     provider: "google",
@@ -86,5 +119,11 @@ export function entrar() {
 }
 
 export function salir() {
+  try {
+    // En un equipo compartido no queda nada de la cuenta al salir.
+    for (const k of Object.keys(localStorage)) if (k.startsWith("inroscan.") && !k.startsWith("inroscan.barra")) localStorage.removeItem(k);
+  } catch {
+    // nada que borrar
+  }
   return supabase().auth.signOut();
 }

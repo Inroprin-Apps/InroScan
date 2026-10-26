@@ -40,7 +40,26 @@ Desde el 26 de octubre se construye su reemplazo, y cambian premisas de fondo:
   PC del procesador. En el repo solo está la lista de conceptos
   (`supabase/semillas/conceptos.csv`).
 
-**Hecho:**
+**Diseño cerrado (26-oct)** en el lienzo «InroScan · Diseño con barra lateral»:
+barra lateral contraíble, la hoja a todo el ancho y la revisión con la
+imagen al lado. Aprobado con todas las funciones propuestas.
+
+**En la web (`web/`), hecho y publicado:**
+- Mis rendiciones (indicadores, pestañas, tabla) y «Nueva rendición».
+- La hoja: celdas tipo planilla, filtros, búsqueda, edición en bloque,
+  estado por fila, historial de cambios y descarga en Excel (14 columnas).
+- Subir fotos o PDF (PC: elegir o arrastrar; teléfono: «Tomar foto»), con
+  lectura inmediata en `supabase/functions/leer` (Gemini; la clave es un
+  secreto de Supabase, `GEMINI_API_KEY`).
+- Revisar con imagen; administración observa por comprobante y por
+  rendición, la devuelve o la aprueba.
+- Administración: bandeja con alertas, cajas chicas, catálogos, personas y
+  reportes.
+- Sin señal: la app abre igual (service worker), muestra lo último guardado
+  y las fotos esperan en el teléfono (IndexedDB) hasta que vuelve la señal.
+- Los comprobantes en dólares se muestran aparte, sin convertir.
+
+**Antes (base y esqueleto):**
 - Esquema, permisos y catálogos en `supabase/migrations/`, con 62
   verificaciones en `supabase/pruebas/` que corren contra un Postgres que imita
   a Supabase (`supabase/pruebas/correr.sh`).

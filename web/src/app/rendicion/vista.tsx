@@ -20,6 +20,7 @@ import {
 import { descargarExcel, filasDeHoja } from "@/lib/hoja-excel";
 import { recargarRendiciones, tituloRendicion } from "@/lib/rendiciones";
 import type { Persona } from "@/lib/sesion";
+import { alSubir } from "@/lib/envio";
 import { leer } from "@/lib/subida";
 import { EDITABLE, type Archivo } from "@/lib/tipos";
 import { IconoBajar, IconoReloj } from "../iconos";
@@ -28,7 +29,7 @@ import { Aviso, botonPrincipal, botonSecundario } from "../piezas";
 import { Cabecera, Resumen } from "./cabecera";
 import { Hoja } from "./hoja";
 import { Historial } from "./historial";
-import { BotonesSubida, ListaSubidas, ZonaArrastre, useSubidas } from "./subidas";
+import { BotonesSubida, EnCola, ZonaArrastre, useSubidas } from "./subidas";
 
 export function VistaRendicion() {
   const id = useSearchParams().get("id");
@@ -48,6 +49,8 @@ export function useRendicion(id: string, persona: Persona) {
   const [datos, setDatos] = useState<DatosRendicion | null>(null);
   const [repetidos, setRepetidos] = useState<Map<string, string>>(new Map());
   const [error, setError] = useState<string | null>(null);
+  // Sin señal se muestra lo último guardado en este equipo, y se puede capturar.
+  const [sinSenal, setSinSenal] = useState(false);
   // Sube cuando un guardado falla: las celdas se rearman con el valor que
   // quedó en la base en vez de seguir mostrando el que se rechazó.
   const [intento, setIntento] = useState(0);
@@ -59,19 +62,46 @@ export function useRendicion(id: string, persona: Persona) {
   const pedidos = useRef(new Set<string>());
 
   const cargar = useCallback(async () => {
+    const clave = `inroscan.rendicion.${id}`;
     try {
       const [d, rep] = await Promise.all([leerRendicion(id), leerRepetidos(id).catch(() => new Map<string, string>())]);
       setDatos(d);
       setRepetidos(rep);
+      setSinSenal(false);
+      try {
+        localStorage.setItem(clave, JSON.stringify(d));
+      } catch {
+        // sin copia: sin señal no se verá
+      }
     } catch (e) {
-      setError((e as Error).message);
+      const mensaje = (e as Error).message;
+      let copia: DatosRendicion | null = null;
+      try {
+        copia = JSON.parse(localStorage.getItem(clave) ?? "null");
+      } catch {
+        copia = null;
+      }
+      if (/^Sin conexión/.test(mensaje) && (copia || datosActuales.current)) {
+        setDatos((d) => d ?? copia);
+        setSinSenal(true);
+      } else {
+        setError(mensaje);
+      }
     }
   }, [id]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     cargar();
-  }, [cargar]);
+    // Vuelve la señal, o llega algo que se capturó sin ella: se lee de nuevo.
+    const otraVez = () => cargar();
+    window.addEventListener("online", otraVez);
+    const dejar = alSubir((rid) => rid === id && cargar());
+    return () => {
+      window.removeEventListener("online", otraVez);
+      dejar();
+    };
+  }, [cargar, id]);
 
   const pedirLectura = useCallback(
     async (archivoId: string) => {
@@ -143,21 +173,19 @@ export function useRendicion(id: string, persona: Persona) {
       }),
   };
 
-  return { datos, repetidos, error, intento, editable, cargar, acciones, datosActuales, pedidos, conRendicion, ejecutar };
+  return { datos, repetidos, error, sinSenal, intento, editable, cargar, acciones, datosActuales, pedidos, conRendicion, ejecutar };
 }
 
 function HojaRendicion({ id, persona }: { id: string; persona: Persona }) {
   const { catalogos, error: errorCatalogos } = useCatalogos();
-  const { datos, repetidos, error, intento, editable, cargar, acciones, datosActuales, pedidos } = useRendicion(id, persona);
+  const { datos, repetidos, error, sinSenal, intento, editable, acciones, datosActuales } = useRendicion(id, persona);
   const [verHistorial, setVerHistorial] = useState(false);
   const cerrarHistorial = useCallback(() => setVerHistorial(false), []);
 
-  const { subidas, recibir } = useSubidas({
+  const { errores, recibir } = useSubidas({
     obtener: () => datosActuales.current?.rendicion ?? null,
     persona,
     filasActuales: () => datosActuales.current?.comprobantes ?? [],
-    recargar: cargar,
-    alPedirLectura: (a) => pedidos.current.add(a),
   });
 
   if (error && !datos) return <Aviso>{error}</Aviso>;
@@ -228,6 +256,16 @@ function HojaRendicion({ id, persona }: { id: string; persona: Persona }) {
         }
       />
 
+      {editable && (
+        <div className="grid grid-cols-[1fr_auto] gap-2 md:hidden">
+          <BotonesSubida onArchivos={recibir} telefono />
+        </div>
+      )}
+      {sinSenal && (
+        <Aviso tono="aviso">Sin conexión: ves lo último guardado en este equipo. Puedes tomar fotos igual.</Aviso>
+      )}
+      <EnCola rendicionId={r.id} errores={errores} />
+
       {r.estado === "observada" && r.observacion && (
         <Aviso tono="aviso">
           <b>Observación de administración:</b> {r.observacion}
@@ -250,7 +288,6 @@ function HojaRendicion({ id, persona }: { id: string; persona: Persona }) {
       />
 
       {error && <Aviso>{error}</Aviso>}
-      <ListaSubidas subidas={subidas} />
 
       <Hoja
         rendicionId={r.id}
@@ -258,19 +295,21 @@ function HojaRendicion({ id, persona }: { id: string; persona: Persona }) {
         archivos={archivos}
         repetidos={repetidos}
         catalogos={catalogos}
-        editable={editable}
+        editable={editable && !sinSenal}
         intento={intento}
         onGuardar={acciones.guardarFila}
         onGuardarVarios={acciones.guardarVarios}
         onReleer={acciones.releer}
         herramientas={
           editable && (
-            <>
-              <button type="button" onClick={acciones.agregar} className="h-10 px-2 text-sm font-medium text-texto-2 underline">
-                Agregar a mano
-              </button>
+            <div className="hidden items-center gap-2 md:flex">
+              {!sinSenal && (
+                <button type="button" onClick={acciones.agregar} className="h-10 px-2 text-sm font-medium text-texto-2 underline">
+                  Agregar a mano
+                </button>
+              )}
               <BotonesSubida onArchivos={recibir} />
-            </>
+            </div>
           )
         }
       />

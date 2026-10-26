@@ -9,7 +9,18 @@ import { leerRendiciones, type RendicionConResumen } from "./datos";
  * que cada pantalla pida lo mismo por su lado.
  */
 
-type Estado = { rendiciones: RendicionConResumen[] | null; error: string | null };
+type Estado = { rendiciones: RendicionConResumen[] | null; error: string | null; sinSenal?: boolean };
+
+const CLAVE = "inroscan.rendiciones";
+
+// Lo último que se vio, para mostrar algo (y poder capturar) sin señal.
+function guardada(): RendicionConResumen[] | null {
+  try {
+    return JSON.parse(localStorage.getItem(CLAVE) ?? "null");
+  } catch {
+    return null;
+  }
+}
 
 let actual: Estado = { rendiciones: null, error: null };
 let enCurso: Promise<void> | null = null;
@@ -23,8 +34,19 @@ function avisar(nuevo: Estado) {
 export function recargarRendiciones(): Promise<void> {
   enCurso = leerRendiciones()
     .then(
-      (rendiciones) => avisar({ rendiciones, error: null }),
-      (e: Error) => avisar({ ...actual, error: e.message }),
+      (rendiciones) => {
+        try {
+          localStorage.setItem(CLAVE, JSON.stringify(rendiciones));
+        } catch {
+          // lleno o bloqueado: se sigue sin copia
+        }
+        avisar({ rendiciones, error: null });
+      },
+      (e: Error) => {
+        const copia = actual.rendiciones ?? guardada();
+        if (copia && /^Sin conexión/.test(e.message)) avisar({ rendiciones: copia, error: null, sinSenal: true });
+        else avisar({ ...actual, error: e.message });
+      },
     )
     .finally(() => {
       enCurso = null;

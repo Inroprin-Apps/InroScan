@@ -135,9 +135,7 @@ export function Hoja({
       {visibles.length === 0 ? (
         <p className="px-1 py-6 text-center text-texto-2">
           {filas.length === 0
-            ? editable
-              ? "Sube las fotos o PDF de tus comprobantes: se leen solos. También puedes arrastrarlos a esta pantalla."
-              : "Esta rendición no tiene comprobantes."
+            ? "Todavía no hay comprobantes. Sube las fotos o PDF: se leen solos (en PC también puedes arrastrarlos a la pantalla)."
             : "Nada con ese filtro."}
         </p>
       ) : (

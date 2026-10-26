@@ -2,8 +2,11 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useCallback, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { ruta } from "@/lib/base";
+import { pendientesActuales, usePendientes } from "@/lib/cola";
+import { useEnLinea } from "@/lib/conexion";
+import { procesarCola } from "@/lib/envio";
 import { cuentas } from "@/lib/cuentas";
 import { useBarraContraida } from "@/lib/preferencias";
 import { EN_CURSO, tituloRendicion, useRendiciones } from "@/lib/rendiciones";
@@ -19,6 +22,8 @@ import {
   IconoPersonas,
   IconoReportes,
   IconoSalir,
+  IconoSinSenal,
+  IconoSubir,
 } from "./iconos";
 import { NuevaRendicion } from "./nueva-rendicion";
 import { Aviso, botonPrincipal } from "./piezas";
@@ -75,7 +80,25 @@ function Armazon({
   const [preferida, setPreferida] = useBarraContraida();
   const [nueva, setNueva] = useState(false);
   const cerrarNueva = useCallback(() => setNueva(false), []);
+  const [verCola, setVerCola] = useState(false);
+  const cerrarCola = useCallback(() => setVerCola(false), []);
   const contraida = forzarContraida || preferida;
+
+  // Lo que quedó en el teléfono sube al abrir la app, al volver la señal, al
+  // volver a la app y, mientras quede algo, cada medio minuto.
+  useEffect(() => {
+    procesarCola();
+    const alVolver = () => procesarCola();
+    const alMirar = () => document.visibilityState === "visible" && procesarCola();
+    window.addEventListener("online", alVolver);
+    document.addEventListener("visibilitychange", alMirar);
+    const reloj = setInterval(() => pendientesActuales().some((p) => !p.bloqueado) && procesarCola(), 30_000);
+    return () => {
+      window.removeEventListener("online", alVolver);
+      document.removeEventListener("visibilitychange", alMirar);
+      clearInterval(reloj);
+    };
+  }, []);
 
   return (
     <div className="flex min-h-dvh flex-1">
@@ -85,13 +108,15 @@ function Armazon({
         contraida={contraida}
         onAlternar={forzarContraida ? undefined : () => setPreferida(!preferida)}
         onNueva={() => setNueva(true)}
+        onCola={() => setVerCola(true)}
       />
       <div className="flex min-w-0 flex-1 flex-col">
         <CabeceraMovil persona={persona} />
         <main className="min-w-0 flex-1 px-4 pb-28 pt-4 md:px-6 md:pb-8 md:pt-6">{children}</main>
       </div>
-      <NavInferior persona={persona} activo={activo} onNueva={() => setNueva(true)} />
+      <NavInferior persona={persona} activo={activo} onNueva={() => setNueva(true)} onCola={() => setVerCola(true)} />
       {nueva && <NuevaRendicion persona={persona} onCerrar={cerrarNueva} />}
+      {verCola && <PorSubir onCerrar={cerrarCola} />}
     </div>
   );
 }
@@ -115,14 +140,17 @@ function BarraLateral({
   contraida,
   onAlternar,
   onNueva,
+  onCola,
 }: {
   persona: Persona;
   activo?: Activo;
   contraida: boolean;
   onAlternar?: () => void;
   onNueva: () => void;
+  onCola: () => void;
 }) {
   const { rendiciones } = useRendiciones();
+  const enCola = usePendientes().length;
   const mias = (rendiciones ?? []).filter(
     (r) => r.responsable_id === persona.id && (EN_CURSO as readonly string[]).includes(r.estado),
   );
@@ -234,7 +262,13 @@ function BarraLateral({
         </div>
       )}
 
-      <div className="mt-auto flex items-center gap-2.5 border-t border-borde px-1.5 pt-3.5">
+      {enCola > 0 && (
+        <button type="button" onClick={onCola} className="mt-auto flex items-center gap-2 rounded-chico bg-aviso-suave px-2.5 py-2 text-left text-[13px] font-semibold text-aviso">
+          <IconoSubir className="h-4 w-4" />
+          {enCola} por subir
+        </button>
+      )}
+      <div className={`${enCola > 0 ? "" : "mt-auto "}flex items-center gap-2.5 border-t border-borde px-1.5 pt-3.5`}>
         <Iniciales persona={persona} />
         <span className="flex min-w-0 flex-col">
           <span className="truncate text-sm font-semibold text-texto">{persona.nombre || persona.correo}</span>
@@ -295,7 +329,18 @@ function CabeceraMovil({ persona }: { persona: Persona }) {
   );
 }
 
-function NavInferior({ persona, activo, onNueva }: { persona: Persona; activo?: Activo; onNueva: () => void }) {
+function NavInferior({
+  persona,
+  activo,
+  onNueva,
+  onCola,
+}: {
+  persona: Persona;
+  activo?: Activo;
+  onNueva: () => void;
+  onCola: () => void;
+}) {
+  const enCola = usePendientes().length;
   const item = (on: boolean) =>
     `flex min-w-16 flex-col items-center gap-0.5 text-[11px] font-semibold ${on ? "text-acento-texto" : "text-texto-2"}`;
   return (
@@ -311,6 +356,17 @@ function NavInferior({ persona, activo, onNueva }: { persona: Persona; activo?: 
         <IconoMas className="h-5.5 w-5.5" />
         Nueva
       </button>
+      {enCola > 0 && (
+        <button type="button" onClick={onCola} className={item(false)}>
+          <span className="relative flex">
+            <IconoSubir className="h-5.5 w-5.5" />
+            <span className="absolute -right-3 -top-1.5 flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-peligro px-1 text-[10px] font-bold text-white">
+              {enCola}
+            </span>
+          </span>
+          Por subir
+        </button>
+      )}
       {persona.es_administracion && (
         <Link href="/bandeja/" className={item(activo === "bandeja")}>
           <IconoBandeja className="h-5.5 w-5.5" />
@@ -365,5 +421,68 @@ function Ingreso({ aviso }: { aviso: string | null }) {
         </p>
       </section>
     </main>
+  );
+}
+
+/** Lo que espera en el teléfono, de todas las rendiciones. */
+function PorSubir({ onCerrar }: { onCerrar: () => void }) {
+  const pendientes = usePendientes();
+  const { rendiciones } = useRendiciones();
+  const enLinea = useEnLinea();
+  const titulo = (id: string) => {
+    const r = rendiciones?.find((x) => x.id === id);
+    return r ? tituloRendicion(r) : "Rendición";
+  };
+  const grupos = [...new Set(pendientes.map((p) => p.rendicionId))];
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-end justify-center bg-tinta/40 sm:items-center sm:p-4" onClick={onCerrar}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="cola-titulo"
+        className="w-full max-w-md rounded-t-grande bg-superficie p-5 shadow-xl sm:rounded-grande"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 id="cola-titulo" className="font-display text-lg font-bold text-tinta">
+          Por subir
+        </h2>
+        {!enLinea && (
+          <p className="mt-3 flex gap-2.5 rounded-chico bg-aviso-suave px-3 py-2.5 text-sm text-aviso">
+            <IconoSinSenal className="mt-0.5 h-5 w-5 shrink-0" />
+            Sin señal. Las fotos están guardadas en este teléfono y se suben solas cuando vuelva la conexión.
+          </p>
+        )}
+        {pendientes.length === 0 ? (
+          <p className="mt-3 text-texto-2">Todo subido.</p>
+        ) : (
+          <ul className="mt-3 space-y-2">
+            {grupos.map((id) => {
+              const deEsta = pendientes.filter((p) => p.rendicionId === id);
+              return (
+                <li key={id}>
+                  <Link href={`/rendicion/?id=${id}`} onClick={onCerrar} className="flex justify-between gap-3 rounded-chico border border-borde px-3 py-2.5">
+                    <span className="font-semibold">{titulo(id)}</span>
+                    <span className="text-sm text-texto-2">
+                      {deEsta.length} foto{deEsta.length === 1 ? "" : "s"}
+                      {deEsta.some((p) => p.bloqueado) ? " · con error" : ""}
+                    </span>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        <p className="mt-4 text-[13px] text-texto-3">En iPhone, abre la app cuando tengas internet para que se suba todo.</p>
+        <div className="mt-4 flex gap-2">
+          <button type="button" className={`flex-1 ${botonPrincipal}`} disabled={!enLinea || !pendientes.length} onClick={() => procesarCola()}>
+            Subir ahora
+          </button>
+          <button type="button" className="rounded-chico border border-borde-2 px-4 font-medium text-texto-2" onClick={onCerrar}>
+            Cerrar
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

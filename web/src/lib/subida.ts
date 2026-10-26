@@ -22,8 +22,10 @@ export function medidaReducida(ancho: number, alto: number, max = LADO_MAXIMO) {
 
 export const esPdf = (f: { type: string; name: string }) => f.type === "application/pdf" || /\.pdf$/i.test(f.name);
 
+export type Preparado = { blob: Blob; mime: string; ext: string };
+
 /** Las fotos se achican y pasan a JPEG; los PDF van tal cual. */
-async function preparar(f: File): Promise<{ blob: Blob; mime: string; ext: string }> {
+export async function preparar(f: File): Promise<Preparado> {
   if (esPdf(f)) {
     if (f.size > PESO_MAXIMO) throw new Error("El PDF pesa más de 10 MB. Divídelo o escanéalo con menos resolución.");
     return { blob: f, mime: "application/pdf", ext: "pdf" };
@@ -65,14 +67,17 @@ export function mensajeDeStorage(e: { message?: string; statusCode?: string | nu
  * de las anteriores. Devuelve el id del archivo.
  */
 export async function subir(rendicionId: string, f: File, base: Herencia): Promise<string> {
-  const { blob, mime, ext } = await preparar(f);
+  return subirPreparado(rendicionId, await preparar(f), base);
+}
+
+export async function subirPreparado(rendicionId: string, { blob, mime, ext }: Preparado, base: Herencia): Promise<string> {
   const db = supabase();
   const firma = await huella(blob);
 
   // Antes de subir: la misma foto dos veces es un error de captura, y subirla
   // igual dejaría una copia huérfana en el almacenamiento.
   const ya = await db.from("archivos").select("id").eq("rendicion_id", rendicionId).eq("huella", firma).maybeSingle();
-  if (ya.data) throw new Error("Ese archivo ya está subido en esta rendición.");
+  if (ya.data) throw new Error(YA_SUBIDO);
 
   const clientId = crypto.randomUUID();
   const ruta = `${rendicionId}/${clientId}.${ext}`;
@@ -92,6 +97,12 @@ export async function subir(rendicionId: string, f: File, base: Herencia): Promi
   if (fila.error) throw new FallaDeBase(fila.error);
   return archivo.data.id;
 }
+
+/** El error es la falta de señal (vale reintentar), no un problema del archivo. */
+export const esSinConexion = (e: unknown) =>
+  (typeof navigator !== "undefined" && !navigator.onLine) || /^Sin conexión/.test((e as Error)?.message ?? "");
+
+export const YA_SUBIDO = "Ese archivo ya está subido en esta rendición.";
 
 /** Pide la lectura y espera a que termine (unos segundos por archivo). */
 export async function leer(archivoId: string): Promise<void> {
