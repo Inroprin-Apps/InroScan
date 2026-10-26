@@ -9,6 +9,7 @@ export type Persona = {
   id: string;
   correo: string;
   nombre: string;
+  area_id: number | null;
   es_administracion: boolean;
 };
 
@@ -37,7 +38,7 @@ export function useSesion(): Sesion {
       }
       const { data, error } = await cliente
         .from("personas")
-        .select("id, correo, nombre, es_administracion")
+        .select("id, correo, nombre, area_id, es_administracion")
         .eq("id", uid)
         .single();
       if (!vigente) return;
