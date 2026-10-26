@@ -33,6 +33,45 @@ Deno.test("la carpeta se busca dentro de la unidad y se crea si no está", async
   assertEquals((llamadas[1].init.headers as Record<string, string>).Authorization, "Bearer tok");
 });
 
+Deno.test("fuera de una unidad compartida, la carpeta se busca en todo lo que ve la cuenta", async () => {
+  const { pedir, llamadas } = falso([[/\/files\?q=/, { files: [{ id: "x" }] }]]);
+  await new Drive(pedir, "t").carpeta("Memos", "madre", null);
+  const p = new URL(llamadas[0].url).searchParams;
+  assertEquals([p.get("corpora"), p.get("driveId")], ["allDrives", null]);
+});
+
+Deno.test("la carpeta madre: tiene que ser una carpeta donde se pueda crear", async () => {
+  const carpeta = (extra: Record<string, unknown>) =>
+    falso([[/\/files\/m1\?/, {
+      id: "m1",
+      name: "Rendiciones",
+      mimeType: "application/vnd.google-apps.folder",
+      capabilities: { canAddChildren: true },
+      ...extra,
+    }]]).pedir;
+  assertEquals(await new Drive(carpeta({ driveId: "u1" }), "t").carpetaMadre("m1"), {
+    id: "m1",
+    name: "Rendiciones",
+    driveId: "u1",
+  });
+  assertEquals((await new Drive(carpeta({}), "t").carpetaMadre("m1")).driveId, null);
+  await assertRejects(
+    () => new Drive(carpeta({ mimeType: "application/pdf" }), "t").carpetaMadre("m1"),
+    ErrorDeGoogle,
+    "no es de una carpeta",
+  );
+  await assertRejects(
+    () => new Drive(carpeta({ capabilities: { canAddChildren: false } }), "t").carpetaMadre("m1"),
+    ErrorDeGoogle,
+    "no puede crear archivos en «Rendiciones»",
+  );
+  await assertRejects(
+    () => new Drive(falso([]).pedir, "t").carpetaMadre("m1"),
+    ErrorDeGoogle,
+    "no ve esa carpeta",
+  );
+});
+
 Deno.test("si la carpeta ya existe no se duplica", async () => {
   const { pedir, llamadas } = falso([[/\/files\?q=/, { files: [{ id: "vieja" }] }]]);
   assertEquals(await new Drive(pedir, "t").carpeta("Cajas", "u", "u"), "vieja");
@@ -74,6 +113,6 @@ Deno.test("errores de Google en palabras", async () => {
     ErrorDeGoogle,
     "vuelve a conectarla",
   );
-  const apagada = falso([[/drives/, { error: { message: "accessNotConfigured" } }, 403]]);
-  await assertRejects(() => new Drive(apagada.pedir, "t").unidadPorNombre("x"), ErrorDeGoogle, "no está activada");
+  const apagada = falso([[/files/, { error: { message: "accessNotConfigured" } }, 403]]);
+  await assertRejects(() => new Drive(apagada.pedir, "t").carpetaMadre("x"), ErrorDeGoogle, "no está activada");
 });

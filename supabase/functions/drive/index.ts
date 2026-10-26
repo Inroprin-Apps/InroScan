@@ -1,14 +1,15 @@
-// La rendición en la unidad compartida de Drive.
+// La rendición en Drive, dentro de la carpeta madre que elige administración.
 //
-// - conectar: administración conecta una cuenta de Google una vez; se guarda
-//   su token de larga duración (tabla integraciones, solo el sistema la lee).
-// - estado: si hay conexión, con qué cuenta y en qué unidad.
+// - conectar: administración conecta una cuenta de Google una vez y elige la
+//   carpeta madre; se guarda su token de larga duración (tabla integraciones,
+//   solo el sistema la lee).
+// - estado: si hay conexión, con qué cuenta y en qué carpeta.
 // - publicar: al enviar (y al reenviar) copia las imágenes nuevas a la carpeta
 //   de la rendición y genera la hoja y el PDF de esa versión; al aprobar,
 //   verifica cada copia y recién entonces borra la imagen de Supabase.
 //
 // Secretos (Supabase → Edge Functions → Secrets): GOOGLE_CLIENT_SECRET; y
-// opcionalmente GOOGLE_CLIENT_ID y DRIVE_UNIDAD.
+// opcionalmente GOOGLE_CLIENT_ID.
 
 import { createClient } from "npm:@supabase/supabase-js@2.118.0";
 import { crypto as cripto } from "jsr:@std/crypto@1.0.5";
@@ -27,7 +28,6 @@ import {
 
 const CLIENT_ID = Deno.env.get("GOOGLE_CLIENT_ID") ||
   "951030676058-igp95ct69p03lcpt02vtjs79t5dmsrij.apps.googleusercontent.com";
-const UNIDAD = Deno.env.get("DRIVE_UNIDAD") || "InroScan · Rendiciones";
 /** Pasado esto, una versión que quedó a medio generar se puede volver a intentar. */
 const PLAZO_MS = 5 * 60_000;
 const CERRADAS = ["aprobada", "repuesta", "liquidada"];
@@ -50,7 +50,16 @@ const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SE
   auth: { persistSession: false, autoRefreshToken: false },
 });
 
-type Conexion = { refresh_token: string; cuenta: string; unidad_id: string; unidad_nombre: string };
+type Conexion = {
+  refresh_token: string;
+  cuenta: string;
+  carpeta_id: string;
+  carpeta_nombre: string;
+  /** La unidad compartida donde vive la carpeta madre, si vive en una. */
+  unidad_id: string | null;
+};
+
+const enlaceDe = (id: string) => `https://drive.google.com/drive/folders/${id}`;
 
 function secreto(): string {
   const s = Deno.env.get("GOOGLE_CLIENT_SECRET");
@@ -80,12 +89,15 @@ Deno.serve(async (req) => {
       const c = await conexion();
       return responder(
         200,
-        c ? { conectado: true, cuenta: c.cuenta, unidad: c.unidad_nombre } : { conectado: false, unidad: UNIDAD },
+        c
+          ? { conectado: true, cuenta: c.cuenta, carpeta: c.carpeta_nombre, enlace: enlaceDe(c.carpeta_id) }
+          : { conectado: false },
       );
     }
 
     if (cuerpo.accion === "conectar") {
       if (!persona.es_administracion) throw new Rechazo(403, "Solo administración conecta Drive.");
+      if (!cuerpo.carpeta) throw new Rechazo(400, "Falta indicar la carpeta madre.");
       const t = await canjearCodigo(fetch, {
         code: String(cuerpo.code),
         redirect_uri: String(cuerpo.redirect_uri),
@@ -96,18 +108,13 @@ Deno.serve(async (req) => {
         throw new Rechazo(400, "Google no entregó un acceso duradero. Vuelve a conectar y acepta todos los permisos.");
       }
       const cuenta = await correoDe(fetch, t.access_token);
-      const unidad = await new Drive(fetch, t.access_token).unidadPorNombre(UNIDAD);
-      if (!unidad) {
-        throw new Rechazo(
-          404,
-          `No encuentro la unidad compartida «${UNIDAD}» para ${cuenta}. Créala (o agrega esa cuenta como administradora) y vuelve a conectar.`,
-        );
-      }
+      const madre = await new Drive(fetch, t.access_token).carpetaMadre(String(cuerpo.carpeta));
       const datos: Conexion = {
         refresh_token: t.refresh_token,
         cuenta,
-        unidad_id: unidad.id,
-        unidad_nombre: unidad.name,
+        carpeta_id: madre.id,
+        carpeta_nombre: madre.name,
+        unidad_id: madre.driveId,
       };
       const { error } = await db.from("integraciones").upsert({
         clave: "drive",
@@ -115,7 +122,7 @@ Deno.serve(async (req) => {
         actualizado_en: new Date().toISOString(),
       });
       if (error) throw new Error(error.message);
-      return responder(200, { conectado: true, cuenta, unidad: unidad.name });
+      return responder(200, { conectado: true, cuenta, carpeta: madre.name, enlace: enlaceDe(madre.id) });
     }
 
     if (cuerpo.accion === "publicar") {
@@ -151,7 +158,7 @@ async function publicar(rendicionId: string, uid: string, esAdmin: boolean) {
   // 1. La carpeta de la rendición (una vez), compartida con quien rinde.
   let carpeta: string = r.drive_carpeta_id;
   if (!carpeta) {
-    carpeta = c.unidad_id;
+    carpeta = c.carpeta_id;
     for (const nombre of rutaDeCarpeta(r as Rendicion, r.caja, responsable)) {
       carpeta = await drive.carpeta(nombre, carpeta, c.unidad_id);
     }

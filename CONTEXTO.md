@@ -122,10 +122,11 @@ base para la generación de la hoja en Drive si se hace desde una PC.
    rendición, la hoja (un .xlsx que Drive convierte a Google Sheets, con
    fórmulas vivas y cada N° enlazado a su imagen) y su PDF; copia las imágenes
    verificando su MD5, y al aprobar las borra de Supabase solo si la copia en
-   Drive coincide. Falta del lado de Google: la API de Drive activada, la URI
-   de retorno `…/inroscan/web/drive/` en el cliente OAuth, el secreto
-   `GOOGLE_CLIENT_SECRET` en Supabase, la unidad compartida «InroScan ·
-   Rendiciones», y conectar desde Administración › Drive.
+   Drive coincide. Todo cuelga de una **carpeta madre** que se elige al
+   conectar (hoy, INROSCAN › Rendiciones, en una unidad compartida). Falta del lado de Google: la URI de retorno
+   `…/inroscan/web/drive/` en el cliente OAuth, el secreto
+   `GOOGLE_CLIENT_SECRET` en Supabase, y conectar desde Administración › Drive
+   pegando el enlace de la carpeta madre. (La API de Drive ya está activada.)
 2. **Validar la tabla de conceptos** (MEDICINA sin definir; hay propuestas por
    analogía marcadas `propuesta`).
 3. **Confirmar el nombre que se imprime en EMPRESA.**

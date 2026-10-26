@@ -92,7 +92,7 @@ export function titulo(r: Rendicion, caja: { numero: string } | null): string {
 /** Drive admite casi todo en un nombre; se quitan las barras para que no parezcan rutas. */
 const limpio = (t: string) => t.replace(/[\\/]+/g, "-").replace(/\s+/g, " ").trim();
 
-/** Dónde vive la rendición dentro de la unidad compartida. */
+/** Dónde vive la rendición dentro de la carpeta madre. */
 export function rutaDeCarpeta(r: Rendicion, caja: { numero: string } | null, responsable: string): string[] {
   return r.tipo === "caja"
     ? ["Cajas", limpio(`Caja ${caja?.numero ?? "?"}`), limpio(`Reposición ${r.correlativo}`)]

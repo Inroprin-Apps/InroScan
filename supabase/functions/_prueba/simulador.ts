@@ -5,7 +5,7 @@
  * Imita lo que esas funciones usan, con la forma real de cada pedido:
  * PostgREST (filtros, `or`, embebidos, insert/upsert/update), Storage
  * (descargar y borrar), la sesión (auth/v1/user), el token de Google, la
- * unidad compartida, carpetas, subidas multipart/related, conversión a hoja,
+ * carpeta madre, carpetas, subidas multipart/related, conversión a hoja,
  * exportación a PDF, permisos y Gemini.
  *
  * Las carpetas que empiezan con «_» no se despliegan como funciones.
@@ -25,6 +25,10 @@ export type ArchivoDrive = {
   bytes: Uint8Array;
   md5?: string;
   trashed?: boolean;
+  /** La unidad compartida donde vive. */
+  driveId?: string;
+  /** La cuenta conectada la ve pero no puede crear dentro. */
+  soloLectura?: boolean;
 };
 
 const md5 = async (b: Uint8Array) => encodeHex(await cripto.subtle.digest("MD5", b as Uint8Array<ArrayBuffer>));
@@ -62,11 +66,28 @@ export function simulador() {
   const drive = {
     archivos: new Map<string, ArchivoDrive>(),
     permisos: [] as { archivo: string; correo: string; rol: string }[],
-    unidades: [{ id: "unidad-1", name: "InroScan · Rendiciones" }],
     refresh: "refresh-ok",
     /** Para simular una copia que llega dañada. */
     danarProxima: false,
   };
+  // La carpeta madre dentro de una unidad compartida, y otra que solo se puede ver.
+  const CARPETA = "application/vnd.google-apps.folder";
+  drive.archivos.set("raiz-1", {
+    id: "raiz-1",
+    name: "Rendiciones",
+    parents: ["unidad-1"],
+    mimeType: CARPETA,
+    bytes: new Uint8Array(),
+    driveId: "unidad-1",
+  });
+  drive.archivos.set("ajena", {
+    id: "ajena",
+    name: "Ajena",
+    parents: ["otra"],
+    mimeType: CARPETA,
+    bytes: new Uint8Array(),
+    soloLectura: true,
+  });
   const gemini = {
     llamadas: [] as { mime: string; prompt: string }[],
     /** Qué «lee» la IA según el tipo de archivo; o un error HTTP. */
@@ -252,23 +273,29 @@ export function simulador() {
     if (url.host === "openidconnect.googleapis.com") return json({ email: "t.donoso@inroprin.com" });
 
     const ruta = url.pathname;
-    if (ruta === "/drive/v3/drives") {
-      const { nombre } = consulta(url.searchParams.get("q") ?? "");
-      return json({ drives: drive.unidades.filter((u) => u.name === nombre) });
-    }
     if (ruta === "/drive/v3/files" && (init.method ?? "GET") === "GET") {
       const { nombre, padre } = consulta(url.searchParams.get("q") ?? "");
       const files = [...drive.archivos.values()].filter(
         (a) =>
           a.name === nombre && a.parents.includes(padre!) && a.mimeType === "application/vnd.google-apps.folder" &&
-          !a.trashed,
+          !a.trashed &&
+          // En una unidad compartida, Drive busca solo dentro de la unidad indicada.
+          (url.searchParams.get("corpora") !== "drive" || a.driveId === url.searchParams.get("driveId")),
       );
       return json({ files: files.map((a) => ({ id: a.id })) });
     }
     if (ruta === "/drive/v3/files" && init.method === "POST") {
       const m = JSON.parse(String(init.body));
       const id = nuevoId("carpeta");
-      drive.archivos.set(id, { id, name: m.name, parents: m.parents, mimeType: m.mimeType, bytes: new Uint8Array() });
+      const driveId = drive.archivos.get(m.parents[0])?.driveId;
+      drive.archivos.set(id, {
+        id,
+        name: m.name,
+        parents: m.parents,
+        mimeType: m.mimeType,
+        bytes: new Uint8Array(),
+        driveId,
+      });
       log.push(`drive: carpeta «${m.name}»`);
       return json({ id });
     }
@@ -327,7 +354,18 @@ export function simulador() {
     }
     if (datos) {
       const a = drive.archivos.get(datos[1]);
-      return a ? json({ md5Checksum: a.md5, size: String(a.bytes.length), trashed: !!a.trashed }) : json({}, 404);
+      return a
+        ? json({
+          id: a.id,
+          name: a.name,
+          mimeType: a.mimeType,
+          driveId: a.driveId,
+          md5Checksum: a.md5,
+          size: String(a.bytes.length),
+          trashed: !!a.trashed,
+          capabilities: { canAddChildren: !a.soloLectura },
+        })
+        : json({}, 404);
     }
     return json({ error: `Google no simulado: ${ruta}` }, 404);
   }

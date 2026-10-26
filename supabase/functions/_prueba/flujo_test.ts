@@ -243,30 +243,36 @@ Deno.test("drive: del envío al archivo verificado", async (t) => {
     assertMatch(r.cuerpo.error, /no está conectado/);
   });
 
-  await t.step("conectar: solo administración, y con la unidad compartida", async () => {
+  await t.step("conectar: solo administración, y con una carpeta madre donde pueda crear", async () => {
+    const conectar = (token: string, code: string, carpeta?: string) =>
+      llamar(drive, token, { accion: "conectar", code, redirect_uri: "x", carpeta });
     assertEquals((await llamar(drive, "t-ana", { accion: "estado" })).status, 403);
-    assertEquals((await llamar(drive, "t-tomas", { accion: "estado" })).cuerpo, {
-      conectado: false,
-      unidad: "InroScan · Rendiciones",
+    assertEquals((await llamar(drive, "t-tomas", { accion: "estado" })).cuerpo, { conectado: false });
+    assertEquals((await conectar("t-ana", "codigo-bueno", "raiz-1")).status, 403);
+    assertMatch((await conectar("t-tomas", "codigo-bueno")).cuerpo.error, /carpeta madre/);
+    assertEquals((await conectar("t-tomas", "codigo-malo", "raiz-1")).status, 502);
+    assertMatch((await conectar("t-tomas", "codigo-bueno", "no-existe")).cuerpo.error, /no ve esa carpeta/);
+    assertMatch(
+      (await conectar("t-tomas", "codigo-bueno", "ajena")).cuerpo.error,
+      /no puede crear archivos en «Ajena»/,
+    );
+    assertEquals(db.integraciones.length, 0);
+    const ok = await conectar("t-tomas", "codigo-bueno", "raiz-1");
+    const esperado = {
+      conectado: true,
+      cuenta: "t.donoso@inroprin.com",
+      carpeta: "Rendiciones",
+      enlace: "https://drive.google.com/drive/folders/raiz-1",
+    };
+    assertEquals(ok.cuerpo, esperado);
+    assertEquals(db.integraciones[0].datos, {
+      refresh_token: "refresh-ok",
+      cuenta: "t.donoso@inroprin.com",
+      carpeta_id: "raiz-1",
+      carpeta_nombre: "Rendiciones",
+      unidad_id: "unidad-1",
     });
-    assertEquals(
-      (await llamar(drive, "t-ana", { accion: "conectar", code: "codigo-bueno", redirect_uri: "x" })).status,
-      403,
-    );
-    assertEquals(
-      (await llamar(drive, "t-tomas", { accion: "conectar", code: "codigo-malo", redirect_uri: "x" })).status,
-      502,
-    );
-    const unidades = sim.drive.unidades;
-    sim.drive.unidades = [];
-    const sinUnidad = await llamar(drive, "t-tomas", { accion: "conectar", code: "codigo-bueno", redirect_uri: "x" });
-    assertEquals(sinUnidad.status, 404);
-    assertMatch(sinUnidad.cuerpo.error, /Créala/);
-    sim.drive.unidades = unidades;
-    const ok = await llamar(drive, "t-tomas", { accion: "conectar", code: "codigo-bueno", redirect_uri: "x" });
-    assertEquals(ok.cuerpo, { conectado: true, cuenta: "t.donoso@inroprin.com", unidad: "InroScan · Rendiciones" });
-    assertEquals((db.integraciones[0].datos as { refresh_token: string }).refresh_token, "refresh-ok");
-    assertEquals((await llamar(drive, "t-tomas", { accion: "estado" })).cuerpo.conectado, true);
+    assertEquals((await llamar(drive, "t-tomas", { accion: "estado" })).cuerpo, esperado);
   });
 
   await t.step("otra persona no publica lo ajeno", async () => {
@@ -276,9 +282,10 @@ Deno.test("drive: del envío al archivo verificado", async (t) => {
   await t.step("enviar v1: carpeta, imágenes verificadas, hoja y PDF", async () => {
     const r = await llamar(drive, "t-ana", { accion: "publicar", rendicion_id: "r1" });
     assertEquals(r.status, 200);
-    // Carpetas: Memos / Ana Pérez / Memo 675-2026 / Comprobantes, dentro de la unidad.
+    // Carpetas: Memos / Ana Pérez / Memo 675-2026 / Comprobantes, dentro de la carpeta madre.
     const carpeta = (nombre: string) => enDrive().find((a) => a.name === nombre && a.mimeType.endsWith("folder"))!;
-    assertEquals(carpeta("Memos").parents, ["unidad-1"]);
+    assertEquals(carpeta("Memos").parents, ["raiz-1"]);
+    assertEquals(carpeta("Comprobantes").driveId, "unidad-1");
     assertEquals(carpeta("Ana Pérez").parents, [carpeta("Memos").id]);
     assertEquals(carpeta("Memo 675-2026").parents, [carpeta("Ana Pérez").id]);
     assertEquals(carpeta("Comprobantes").parents, [carpeta("Memo 675-2026").id]);

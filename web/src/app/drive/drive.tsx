@@ -3,16 +3,18 @@
 import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { BASE_PATH } from "@/lib/base";
-import { estadoDrive, irAConectar, terminarConexion, type EstadoDrive } from "@/lib/drive";
+import { estadoDrive, idDeCarpeta, irAConectar, terminarConexion, type EstadoDrive } from "@/lib/drive";
 import { PaginaAdmin } from "../administracion";
-import { Aviso, botonPrincipal, botonSecundario } from "../piezas";
+import { Aviso, botonPrincipal, botonSecundario, campo } from "../piezas";
+
+const rotulo = "block text-sm font-medium text-texto-2";
 
 export function Drive() {
   return (
     <PaginaAdmin
       activo="drive"
       titulo="Drive"
-      descripcion="Al enviar, cada versión deja su hoja y su PDF en la unidad compartida, con las imágenes; al aprobar, las imágenes se borran de InroScan solo después de verificar la copia."
+      descripcion="Al enviar, cada versión deja su hoja y su PDF en la carpeta madre, con las imágenes; al aprobar, las imágenes se borran de InroScan solo después de verificar la copia."
     >
       {() => <Contenido />}
     </PaginaAdmin>
@@ -24,6 +26,8 @@ function Contenido() {
   const [estado, setEstado] = useState<EstadoDrive | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [conectando, setConectando] = useState(false);
+  const [enlace, setEnlace] = useState("");
+  const carpeta = idDeCarpeta(enlace);
   const hecho = useRef(false);
 
   useEffect(() => {
@@ -50,30 +54,42 @@ function Contenido() {
       {!estado && !error && <p className="text-texto-3">Revisando la conexión…</p>}
       {estado?.conectado && (
         <Aviso tono="info">
-          Conectado con <b>{estado.cuenta}</b> a la unidad «{estado.unidad}».
+          Conectado con <b>{estado.cuenta}</b> a la carpeta{" "}
+          <a className="font-semibold underline" href={estado.enlace} target="_blank" rel="noreferrer">
+            «{estado.carpeta}»
+          </a>
+          .
         </Aviso>
       )}
       {estado && !estado.conectado && (
-        <p className="text-texto-2">
-          Todavía no hay una cuenta conectada. Se conecta una vez, con una cuenta de administración que pertenezca a la unidad compartida
-          «{estado.unidad}».
-        </p>
+        <p className="text-texto-2">Todavía no hay una cuenta conectada. Se conecta una vez, con una cuenta de administración.</p>
       )}
       <ol className="list-decimal space-y-1 pl-5 text-sm text-texto-2">
-        <li>Crea la unidad compartida «{estado?.unidad ?? "InroScan · Rendiciones"}» en Google Drive (o usa la que ya existe).</li>
-        <li>Conecta con una cuenta que sea administradora de esa unidad y acepta el acceso a Drive.</li>
+        <li>Abre en Drive la carpeta madre (puede estar dentro de una unidad compartida) y copia su enlace.</li>
+        <li>Pégalo acá y conecta con una cuenta que pueda editar esa carpeta; acepta el acceso a Drive.</li>
         <li>Desde ahí, cada envío deja su carpeta, su hoja, su PDF y las imágenes.</li>
       </ol>
+      <label className={rotulo}>
+        Enlace de la carpeta madre
+        <input
+          className={`mt-1 ${campo}`}
+          value={enlace}
+          onChange={(e) => setEnlace(e.target.value)}
+          placeholder="https://drive.google.com/drive/folders/…"
+        />
+      </label>
+      {enlace && !carpeta && <p className="text-sm text-peligro">Ese enlace no parece de una carpeta de Drive.</p>}
       <button
         type="button"
         className={estado?.conectado ? botonSecundario : botonPrincipal}
-        disabled={conectando}
+        disabled={conectando || !carpeta}
         onClick={() => {
+          if (!carpeta) return;
           setConectando(true);
-          irAConectar();
+          irAConectar(carpeta);
         }}
       >
-        {estado?.conectado ? "Conectar otra cuenta" : "Conectar con Google Drive"}
+        {estado?.conectado ? "Conectar de nuevo (otra cuenta o carpeta)" : "Conectar con Google Drive"}
       </button>
     </section>
   );

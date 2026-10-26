@@ -1,7 +1,8 @@
 /**
- * Lo poco de Google que hace falta: el token, la unidad compartida, carpetas,
+ * Lo poco de Google que hace falta: el token, la carpeta madre, carpetas,
  * subir, convertir a hoja, exportar a PDF y compartir. Todo con
- * `supportsAllDrives`, porque los archivos viven en una unidad compartida.
+ * `supportsAllDrives`, porque la carpeta madre suele vivir en una unidad
+ * compartida.
  *
  * `pedir` se inyecta para poder probar sin red.
  */
@@ -81,20 +82,40 @@ export class Drive {
     return comprobar(r, que);
   }
 
-  /** La unidad compartida por su nombre, entre las que ve la cuenta. */
-  async unidadPorNombre(nombre: string): Promise<{ id: string; name: string } | null> {
-    const q = encodeURIComponent(`name = ${literal(nombre)}`);
-    const r = await this.llamar(`${API}/drives?q=${q}&pageSize=10`, "buscar la unidad compartida");
-    return (await r.json()).drives?.[0] ?? null;
+  /**
+   * La carpeta madre (una carpeta cualquiera o la raíz de una unidad
+   * compartida). `driveId` dice en qué unidad vive, si vive en una.
+   */
+  async carpetaMadre(id: string): Promise<{ id: string; name: string; driveId: string | null }> {
+    const campos = "id,name,mimeType,driveId,trashed,capabilities(canAddChildren)";
+    let c;
+    try {
+      c = await (await this.llamar(`${API}/files/${id}?supportsAllDrives=true&fields=${campos}`, "abrir la carpeta"))
+        .json();
+    } catch (e) {
+      if (e instanceof ErrorDeGoogle && e.status === 404) {
+        throw new ErrorDeGoogle(404, "La cuenta conectada no ve esa carpeta: revisa el enlace o compártesela.");
+      }
+      throw e;
+    }
+    if (c.mimeType !== CARPETA || c.trashed) throw new ErrorDeGoogle(400, "Ese enlace no es de una carpeta vigente.");
+    if (!c.capabilities?.canAddChildren) {
+      throw new ErrorDeGoogle(
+        403,
+        `La cuenta conectada no puede crear archivos en «${c.name}»: necesita poder editarla.`,
+      );
+    }
+    return { id: c.id, name: c.name, driveId: c.driveId ?? null };
   }
 
   /** Busca una carpeta por nombre dentro de otra; si no está, la crea. */
-  async carpeta(nombre: string, padre: string, unidad: string): Promise<string> {
+  async carpeta(nombre: string, padre: string, unidad: string | null): Promise<string> {
     const q = encodeURIComponent(
       `name = ${literal(nombre)} and ${literal(padre)} in parents and mimeType = '${CARPETA}' and trashed = false`,
     );
+    const donde = unidad ? `corpora=drive&driveId=${unidad}` : "corpora=allDrives";
     const r = await this.llamar(
-      `${API}/files?q=${q}&corpora=drive&driveId=${unidad}&includeItemsFromAllDrives=true&supportsAllDrives=true&fields=files(id)`,
+      `${API}/files?q=${q}&${donde}&includeItemsFromAllDrives=true&supportsAllDrives=true&fields=files(id)`,
       "buscar una carpeta",
     );
     const hallada = (await r.json()).files?.[0]?.id;
@@ -147,7 +168,7 @@ export class Drive {
     return r.json();
   }
 
-  /** A la papelera de la unidad (se puede recuperar), no borrado definitivo. */
+  /** A la papelera (se puede recuperar), no borrado definitivo. */
   async papelera(id: string): Promise<void> {
     await this.llamar(`${API}/files/${id}?supportsAllDrives=true`, "mandar a la papelera", {
       method: "PATCH",

@@ -5,7 +5,7 @@ import { FallaDeBase } from "./errores-de-base";
 import { supabase } from "./supabase";
 
 /**
- * La rendición en la unidad compartida de Drive (función «drive»). Publicar
+ * La rendición en Drive, en la carpeta madre (función «drive»). Publicar
  * nunca bloquea a la persona: si Drive falla, la rendición igual quedó
  * enviada, y se vuelve a intentar en el próximo envío o aprobación.
  */
@@ -24,7 +24,14 @@ async function llamar<T>(cuerpo: Record<string, unknown>): Promise<T> {
   throw new Error("Sin conexión con el servidor.");
 }
 
-export type EstadoDrive = { conectado: boolean; cuenta?: string; unidad: string };
+export type EstadoDrive = { conectado: boolean; cuenta?: string; carpeta?: string; enlace?: string };
+
+/** El id de una carpeta a partir de su enlace de Drive (o el id suelto). Las unidades compartidas tienen 19 caracteres. */
+export function idDeCarpeta(texto: string): string | null {
+  const t = texto.trim();
+  const id = t.match(/\/folders\/([\w-]+)/)?.[1] ?? t.match(/[?&]id=([\w-]+)/)?.[1] ?? t;
+  return /^[\w-]{19,}$/.test(id) ? id : null;
+}
 
 export const estadoDrive = () => llamar<EstadoDrive>({ accion: "estado" });
 
@@ -39,9 +46,10 @@ export function publicarEnDrive(rendicionId: string): Promise<void> {
 export const retornoDrive = () => `${window.location.origin}${BASE_PATH}/drive/`;
 
 /** A la pantalla de Google: acceso a Drive que no vence (se pide una vez). */
-export function irAConectar() {
+export function irAConectar(carpeta: string) {
   const estado = crypto.randomUUID();
   sessionStorage.setItem("inroscan.drive.estado", estado);
+  sessionStorage.setItem("inroscan.drive.carpeta", carpeta);
   const p = new URLSearchParams({
     client_id: CLIENT_ID,
     redirect_uri: retornoDrive(),
@@ -58,9 +66,11 @@ export function irAConectar() {
 /** Al volver de Google: el estado tiene que ser el que se mandó (nadie más inicia esto). */
 export async function terminarConexion(code: string, estado: string): Promise<EstadoDrive> {
   const esperado = sessionStorage.getItem("inroscan.drive.estado");
+  const carpeta = sessionStorage.getItem("inroscan.drive.carpeta");
   sessionStorage.removeItem("inroscan.drive.estado");
+  sessionStorage.removeItem("inroscan.drive.carpeta");
   if (!esperado || esperado !== estado) throw new Error("La respuesta de Google no corresponde a este pedido. Vuelve a intentarlo.");
-  return llamar<EstadoDrive>({ accion: "conectar", code, redirect_uri: retornoDrive() });
+  return llamar<EstadoDrive>({ accion: "conectar", code, redirect_uri: retornoDrive(), carpeta });
 }
 
 export type Version = { numero: number; hoja_id: string | null; pdf_drive_id: string | null; generado_en: string };
