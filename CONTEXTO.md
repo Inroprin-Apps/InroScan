@@ -10,6 +10,56 @@
 
 ---
 
+## 0. En curso: InroScan 2 (octubre de 2026)
+
+**Lo que sigue en este documento describe la app actual, que sigue en uso.**
+Desde el 26 de octubre se construye su reemplazo, y cambian premisas de fondo:
+
+- **INRO VIÁTICOS queda descontinuado y no es referencia.** InroScan deja de
+  ser un puente temporal y pasa a ser *el* sistema de rendiciones. Se invierte
+  el §1.
+- **Pila nueva:**
+  - `web/`: Next.js estático en GitHub Pages, bajo `/inroscan/web/`.
+  - `supabase/`: base con permisos por fila, login con Google e imágenes en tránsito.
+  - `procesador/`: Python en una PC de administración. Lee con OCR + reglas +
+    clasificador, usa la IA solo para lo que falte, y genera la hoja de 14
+    columnas y el PDF de cada versión en Drive.
+- **Caja chica:** la registra su administrador. El número de caja es fijo y
+  cada ciclo es una reposición con correlativo. **Memo de viáticos:** mismos
+  campos; quien viajó suma gastos hasta cerrar.
+- **Visibilidad:** cada persona ve lo suyo; administración ve todo desde el
+  primer momento. Se invierte la regla del §4 («contabilidad no lo ve hasta que
+  la persona comparte»).
+- **El repo es público.** Los ejemplos históricos de gastos traen nombres de
+  personas y **no se suben**; viven en Supabase (solo administración) o en la
+  PC del procesador. En el repo solo está la lista de conceptos
+  (`supabase/semillas/conceptos.csv`).
+
+**Hecho:**
+- Esquema, permisos y catálogos en `supabase/migrations/`, con 62
+  verificaciones en `supabase/pruebas/` que corren contra un Postgres que imita
+  a Supabase (`supabase/pruebas/correr.sh`).
+- Reglas de lectura portadas a Python con sus pruebas.
+- Esqueleto de la app web.
+- CI (`.github/workflows/ci.yml`) y publicación conjunta de las dos apps
+  (`.github/workflows/publicar.yml`).
+
+**Pendiente del lado del usuario:**
+- Crear el proyecto Supabase con una cuenta de la empresa.
+- Agregar la URL de retorno de Supabase al cliente OAuth de Google Cloud.
+- Cambiar GitHub Pages a «GitHub Actions» y permitir esta rama en el entorno
+  `github-pages`.
+- Crear la unidad compartida «InroScan · Rendiciones».
+- Validar la tabla de conceptos.
+- Juntar 30–50 fotos reales para medir la lectura.
+- Confirmar el nombre que se imprime en EMPRESA.
+
+**Errores de la app actual encontrados al portar** (siguen en `app/`):
+`campos.js` nunca reconoce «US$ 10.00» como dólares, porque el `\b` después
+de `$` no calza antes de un espacio.
+
+---
+
 ## 1. Qué es InroScan y por qué existe
 
 El área de contabilidad de INROPRIN trabaja íntegramente sobre Google Workspace.

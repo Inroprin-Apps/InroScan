@@ -1,0 +1,59 @@
+name: Publicar
+
+# Publica en GitHub Pages la app actual en la raíz y la nueva en /web/.
+# Requiere que en Settings › Pages la fuente sea «GitHub Actions», y que el
+# entorno github-pages permita desplegar desde estas ramas.
+on:
+  push:
+    branches: [main, claude/vigilant-wozniak-8cgqsw]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    # Las pruebas no necesitan los permisos de Pages.
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+
+  armar:
+    needs: ci
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci && npm run build
+        working-directory: web
+      # Solo lo que se sirve: ni migraciones, ni el procesador, ni documentos.
+      - name: Juntar las dos apps
+        run: |
+          mkdir _sitio
+          cp -r index.html estilos.css app img spike _sitio/
+          cp -r web/out _sitio/web
+          touch _sitio/.nojekyll
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _sitio
+
+  publicar:
+    needs: armar
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.despliegue.outputs.page_url }}
+    steps:
+      - id: despliegue
+        uses: actions/deploy-pages@v4

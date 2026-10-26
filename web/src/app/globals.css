@@ -1,0 +1,43 @@
+@import "tailwindcss";
+
+/* Identidad INROPRIN / Roland Print: los mismos valores que la app actual
+   (estilos.css), para que las dos se lean como una sola mientras conviven. */
+@theme inline {
+  --color-fondo: #edf1f4;
+  --color-superficie: #ffffff;
+  --color-superficie-2: #f6f8fa;
+  --color-borde: #e4e9ee;
+  --color-borde-2: #d2dae2;
+
+  --color-acento: #00a298;
+  --color-acento-texto: #007a72;
+  --color-acento-suave: #e6f5f4;
+  --color-tinta: #1d1d1b;
+
+  --color-texto: #101a24;
+  --color-texto-2: #52627a;
+  --color-texto-3: #8494a8;
+
+  --color-peligro: #c62828;
+  --color-peligro-suave: #fdecec;
+  --color-aviso: #a15c07;
+  --color-aviso-suave: #fdf3e3;
+  --color-exito: #0a6e4e;
+  --color-exito-suave: #e6f4ee;
+  --color-info: #006db1;
+  --color-info-suave: #e8f1f8;
+
+  /* No «s», «m», «l»: rounded-l y rounded-s ya son utilidades de Tailwind
+     para redondear un solo lado. */
+  --radius-chico: 10px;
+  --radius-medio: 14px;
+  --radius-grande: 18px;
+
+  --font-sans: var(--font-dm-sans);
+  --font-display: var(--font-sora);
+}
+
+body {
+  background: var(--color-fondo);
+  color: var(--color-texto);
+}
