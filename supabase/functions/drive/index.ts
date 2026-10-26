@@ -194,7 +194,11 @@ async function publicar(rendicionId: string, uid: string, esAdmin: boolean) {
       new Blob([bytes], { type: a.tipo_mime }),
       a.tipo_mime,
     );
-    if (subido.md5Checksum !== md5) throw new Error(`La copia en Drive de ${a.id} no coincide con el original.`);
+    if (subido.md5Checksum !== md5) {
+      // Una copia distinta del original no se usa ni se deja suelta en la carpeta.
+      await drive.papelera(subido.id).catch((e) => console.error("papelera", e));
+      throw new Error(`La copia en Drive de ${a.id} no coincide con el original.`);
+    }
     await db.from("archivos").update({ drive_id: subido.id, drive_md5: md5 }).eq("id", a.id);
     enlaces.set(a.id, subido.webViewLink);
   }

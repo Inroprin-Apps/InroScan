@@ -147,6 +147,15 @@ export class Drive {
     return r.json();
   }
 
+  /** A la papelera de la unidad (se puede recuperar), no borrado definitivo. */
+  async papelera(id: string): Promise<void> {
+    await this.llamar(`${API}/files/${id}?supportsAllDrives=true`, "mandar a la papelera", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ trashed: true }),
+    });
+  }
+
   /** Deja ver la carpeta a quien rinde, sin mandarle correo. */
   async compartir(id: string, correo: string): Promise<void> {
     await this.llamar(
