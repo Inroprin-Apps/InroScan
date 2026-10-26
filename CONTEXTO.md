@@ -67,6 +67,7 @@ Teléfono / PC — web/ (Next.js estático en GitHub Pages, /inroscan/web/)
 | Catálogos | Solo administración los crea o desactiva | Un vocabulario único para poder sumar |
 | Categoría y subcategoría | Salen del concepto, viven en la base, no en la hoja | Pedido: la hoja lleva las 14 columnas |
 | Dólares | Se muestran aparte, sin convertir | Sumarlos como soles falseaba los saldos |
+| Drive | La función «drive» entra con una cuenta de administración conectada una vez (su token vive en `integraciones`, que solo lee el sistema) | Nadie tiene que dejar un programa corriendo en su PC; y cuentas de servicio con clave suelen estar bloqueadas en organizaciones nuevas |
 
 ### Estados de una rendición
 
@@ -116,9 +117,15 @@ base para la generación de la hoja en Drive si se hace desde una PC.
 
 ## 5. Lo que está abierto
 
-1. **La hoja y el PDF de cada versión en Drive** (unidad compartida «InroScan ·
-   Rendiciones»), y archivar las imágenes ahí al aprobar para borrarlas de
-   Supabase. Falta que exista la unidad compartida.
+1. **Drive: conectar y probar de punta a punta.** La función
+   `supabase/functions/drive` ya genera, al enviar, la carpeta de la
+   rendición, la hoja (un .xlsx que Drive convierte a Google Sheets, con
+   fórmulas vivas y cada N° enlazado a su imagen) y su PDF; copia las imágenes
+   verificando su MD5, y al aprobar las borra de Supabase solo si la copia en
+   Drive coincide. Falta del lado de Google: la API de Drive activada, la URI
+   de retorno `…/inroscan/web/drive/` en el cliente OAuth, el secreto
+   `GOOGLE_CLIENT_SECRET` en Supabase, la unidad compartida «InroScan ·
+   Rendiciones», y conectar desde Administración › Drive.
 2. **Validar la tabla de conceptos** (MEDICINA sin definir; hay propuestas por
    analogía marcadas `propuesta`).
 3. **Confirmar el nombre que se imprime en EMPRESA.**

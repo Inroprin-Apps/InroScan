@@ -383,4 +383,24 @@ select pruebas.falla($$select * from rendiciones$$, 'sin sesión no se lee ningu
 select pruebas.falla($$select * from areas$$, 'ni los catálogos');
 
 reset role;
+\echo '\n· Drive: lo que escribe el sistema'
+
+reset role; select pruebas.como('ana@inroprin.com');
+select pruebas.falla($$select * from integraciones$$, 'una persona no lee la conexión con Drive');
+select pruebas.falla($$insert into integraciones values ('drive', '{}')$$, 'ni la escribe');
+
+reset role; select pruebas.como('carla@inroprin.com');
+select pruebas.falla($$select * from integraciones$$, 'ni administración: solo el sistema');
+
+reset role; select pruebas.como_sistema();
+insert into integraciones values ('drive', '{"cuenta": "prueba"}');
+select pruebas.ok((select datos ->> 'cuenta' = 'prueba' from integraciones where clave = 'drive'), 'el sistema guarda la conexión');
+update rendiciones set drive_carpeta_id = 'carpeta-1' where id = :'memo700';
+
+reset role; select pruebas.como('ana@inroprin.com');
+update rendiciones set drive_carpeta_id = 'otra', fecha_solicitud = '2026-10-02' where id = :'memo700';
+select pruebas.ok((select fecha_solicitud = '2026-10-02' and drive_carpeta_id = 'carpeta-1' from rendiciones where id = :'memo700'),
+  'una persona edita su memo pero no cambia su carpeta de Drive');
+
 \echo '\nTodo en orden\n'
+

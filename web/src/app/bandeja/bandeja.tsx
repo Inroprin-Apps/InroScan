@@ -6,6 +6,7 @@ import { leerRepetidosPorRendicion, cerrarRendicion } from "@/lib/admin";
 import { faltan } from "@/lib/comprobante";
 import { aNumero, cuentas, soles } from "@/lib/cuentas";
 import type { RendicionConResumen } from "@/lib/datos";
+import { publicarEnDrive } from "@/lib/drive";
 import { cuando } from "@/lib/fechas";
 import { CERRADAS, recargarRendiciones, tituloRendicion, useRendiciones } from "@/lib/rendiciones";
 import { PaginaAdmin, cabeceraAdmin, tablaAdmin } from "../administracion";
@@ -99,6 +100,7 @@ function Contenido() {
     setFalla(null);
     try {
       await cerrarRendicion(r);
+      publicarEnDrive(r.id);
       await recargarRendiciones();
     } catch (e) {
       setFalla((e as Error).message);

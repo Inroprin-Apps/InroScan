@@ -20,10 +20,11 @@ import {
 import { descargarExcel, filasDeHoja } from "@/lib/hoja-excel";
 import { recargarRendiciones, tituloRendicion } from "@/lib/rendiciones";
 import type { Persona } from "@/lib/sesion";
+import { leerVersiones, publicarEnDrive, type Version } from "@/lib/drive";
 import { alSubir } from "@/lib/envio";
 import { leer } from "@/lib/subida";
 import { EDITABLE, type Archivo } from "@/lib/tipos";
-import { IconoBajar, IconoReloj } from "../iconos";
+import { IconoBajar, IconoNube, IconoReloj } from "../iconos";
 import { ConSesion } from "../marco";
 import { Aviso, botonPrincipal, botonSecundario } from "../piezas";
 import { Cabecera, Resumen } from "./cabecera";
@@ -51,6 +52,21 @@ export function useRendicion(id: string, persona: Persona) {
   const [error, setError] = useState<string | null>(null);
   // Sin señal se muestra lo último guardado en este equipo, y se puede capturar.
   const [sinSenal, setSinSenal] = useState(false);
+  // Las versiones enviadas, con su hoja y PDF en Drive; se releen tras publicar.
+  const [versiones, setVersiones] = useState<Version[]>([]);
+  const [versionesAl, setVersionesAl] = useState(0);
+  const version = datos?.rendicion.version ?? 0;
+  useEffect(() => {
+    if (!version) return;
+    let vigente = true;
+    leerVersiones(id).then(
+      (v) => vigente && setVersiones(v),
+      () => {},
+    );
+    return () => {
+      vigente = false;
+    };
+  }, [id, version, versionesAl]);
   // Sube cuando un guardado falla: las celdas se rearman con el valor que
   // quedó en la base en vez de seguir mostrando el que se rechazó.
   const [intento, setIntento] = useState(0);
@@ -165,7 +181,12 @@ export function useRendicion(id: string, persona: Persona) {
         const nueva = await agregarComprobante(id, herencia(d.comprobantes, d.rendicion.tipo, persona));
         setDatos((x) => x && { ...x, comprobantes: [...x.comprobantes, nueva] });
       }),
-    enviar: () => ejecutar(async () => conRendicion(await enviar(id))),
+    enviar: () =>
+      ejecutar(async () => {
+        conRendicion(await enviar(id));
+        // La hoja y el PDF de esta versión se arman en Drive por detrás.
+        publicarEnDrive(id).then(() => setVersionesAl((n) => n + 1));
+      }),
     releer: (archivoId: string) =>
       ejecutar(async () => {
         setDatos((d) => d && { ...d, archivos: d.archivos.map((a) => (a.id === archivoId ? { ...a, estado_lectura: "procesando" } : a)) });
@@ -173,12 +194,12 @@ export function useRendicion(id: string, persona: Persona) {
       }),
   };
 
-  return { datos, repetidos, error, sinSenal, intento, editable, cargar, acciones, datosActuales, pedidos, conRendicion, ejecutar };
+  return { datos, repetidos, error, sinSenal, versiones, intento, editable, cargar, acciones, datosActuales, pedidos, conRendicion, ejecutar };
 }
 
 function HojaRendicion({ id, persona }: { id: string; persona: Persona }) {
   const { catalogos, error: errorCatalogos } = useCatalogos();
-  const { datos, repetidos, error, sinSenal, intento, editable, acciones, datosActuales } = useRendicion(id, persona);
+  const { datos, repetidos, error, sinSenal, versiones, intento, editable, acciones, datosActuales } = useRendicion(id, persona);
   const [verHistorial, setVerHistorial] = useState(false);
   const cerrarHistorial = useCallback(() => setVerHistorial(false), []);
 
@@ -199,6 +220,7 @@ function HojaRendicion({ id, persona }: { id: string; persona: Persona }) {
   }
 
   const { rendicion: r, caja, comprobantes, archivos } = datos;
+  const ultima = versiones.find((v) => v.hoja_id);
   const c = cuentas(comprobantes, r.monto, r.no_sustentan ?? []);
   const incompletas = comprobantes.filter((x) => faltan(x).length > 0).length;
   const porLeer = archivos.filter(leyendo).length;
@@ -241,6 +263,28 @@ function HojaRendicion({ id, persona }: { id: string; persona: Persona }) {
               <IconoReloj className="h-4 w-4" />
               Historial
             </button>
+            {ultima?.hoja_id && (
+              <a
+                href={`https://docs.google.com/spreadsheets/d/${ultima.hoja_id}`}
+                target="_blank"
+                rel="noreferrer"
+                className={`flex items-center gap-2 text-sm ${botonSecundario}`}
+                title={`La hoja de la versión ${ultima.numero} en Drive`}
+              >
+                <IconoNube className="h-4 w-4" />
+                Hoja v{ultima.numero}
+              </a>
+            )}
+            {ultima?.pdf_drive_id && (
+              <a
+                href={`https://drive.google.com/file/d/${ultima.pdf_drive_id}/view`}
+                target="_blank"
+                rel="noreferrer"
+                className={`text-sm ${botonSecundario}`}
+              >
+                PDF
+              </a>
+            )}
             {comprobantes.length > 0 && (
               <button type="button" onClick={excel} className={`flex items-center gap-2 text-sm ${botonSecundario}`}>
                 <IconoBajar className="h-4 w-4" />

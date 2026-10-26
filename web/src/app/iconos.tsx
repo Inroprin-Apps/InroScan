@@ -124,3 +124,8 @@ export const IconoGirar = (p: Props) => (
     <path d="M21 3v5h-5" />
   </Trazo>
 );
+export const IconoNube = (p: Props) => (
+  <Trazo {...p}>
+    <path d="M7 18a5 5 0 0 1-.6-9.96A6 6 0 0 1 18 8.5a4.5 4.5 0 0 1-.5 9.5z" />
+  </Trazo>
+);

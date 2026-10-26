@@ -19,6 +19,7 @@ import {
   IconoIzquierda,
   IconoLista,
   IconoMas,
+  IconoNube,
   IconoPersonas,
   IconoReportes,
   IconoSalir,
@@ -29,7 +30,7 @@ import { NuevaRendicion } from "./nueva-rendicion";
 import { Aviso, botonPrincipal } from "./piezas";
 
 /** Qué está abierto, para marcarlo en la barra: una sección o el id de una rendición. */
-export type Activo = "inicio" | "bandeja" | "cajas" | "catalogos" | "personas" | "reportes" | (string & {});
+export type Activo = "inicio" | "bandeja" | "cajas" | "catalogos" | "personas" | "reportes" | "drive" | (string & {});
 
 /**
  * Toda página con datos pasa por acá: si no hay sesión muestra el ingreso, y
@@ -127,6 +128,7 @@ const ADMIN: { clave: Activo; texto: string; href: string; Icono: (p: { classNam
   { clave: "catalogos", texto: "Catálogos", href: "/catalogos/", Icono: IconoLista },
   { clave: "personas", texto: "Personas", href: "/personas/", Icono: IconoPersonas },
   { clave: "reportes", texto: "Reportes", href: "/reportes/", Icono: IconoReportes },
+  { clave: "drive", texto: "Drive", href: "/drive/", Icono: IconoNube },
 ];
 
 const enlace = (activo: boolean) =>

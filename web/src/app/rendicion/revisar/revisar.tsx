@@ -7,6 +7,7 @@ import { useCatalogos } from "@/lib/catalogos";
 import { estadoFila, numeroCompleto, partirNumero, tipoCorto, type EstadoFila } from "@/lib/comprobante";
 import { aNumero } from "@/lib/cuentas";
 import { decidirRendicion, type CambiosComprobante } from "@/lib/datos";
+import { publicarEnDrive } from "@/lib/drive";
 import { tituloRendicion } from "@/lib/rendiciones";
 import type { Persona } from "@/lib/sesion";
 import type { Archivo, Catalogos, Comprobante } from "@/lib/tipos";
@@ -106,7 +107,11 @@ function Revisar({ id, inicial, persona }: { id: string; inicial: string | null;
       ? `Hay ${conObservacion} comprobante${conObservacion === 1 ? "" : "s"} con observación. ¿Aprobar igual?`
       : "¿Aprobar la rendición? Queda cerrada para cambios.";
     if (!window.confirm(texto)) return;
-    h.ejecutar(async () => h.conRendicion(await decidirRendicion(r.id, "aprobada", "")));
+    h.ejecutar(async () => {
+      h.conRendicion(await decidirRendicion(r.id, "aprobada", ""));
+      // Aprobada: Drive verifica cada imagen copiada y la borra de InroScan.
+      publicarEnDrive(r.id);
+    });
   };
 
   return (
