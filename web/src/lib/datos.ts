@@ -32,14 +32,23 @@ export async function leerCatalogos(): Promise<Catalogos> {
   };
 }
 
-export type FilaResumen = Pick<Comprobante, "total" | "tipo_comprobante_id" | "descartado">;
-export type RendicionConResumen = Rendicion & { comprobantes: FilaResumen[] };
+export type FilaResumen = Pick<
+  Comprobante,
+  "total" | "tipo_comprobante_id" | "descartado" | "fecha" | "numero" | "proyecto_id" | "concepto_id"
+>;
+export type RendicionConResumen = Rendicion & {
+  comprobantes: FilaResumen[];
+  caja: { numero: string } | null;
+  responsable: { nombre: string; correo: string } | null;
+};
 
-/** Las rendiciones de quien está dentro; administración las ve todas. */
-export async function leerMisRendiciones(): Promise<RendicionConResumen[]> {
+/** Las rendiciones que quien está dentro puede ver: las suyas, o todas si es administración. */
+export async function leerRendiciones(): Promise<RendicionConResumen[]> {
   const r = await supabase()
     .from("rendiciones")
-    .select("*, comprobantes(total, tipo_comprobante_id, descartado)")
+    .select(
+      "*, caja:cajas(numero), responsable:personas(nombre, correo), comprobantes(total, tipo_comprobante_id, descartado, fecha, numero, proyecto_id, concepto_id)",
+    )
     .order("creado_en", { ascending: false });
   return exigir(r) as RendicionConResumen[];
 }

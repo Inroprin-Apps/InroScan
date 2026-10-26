@@ -11,12 +11,16 @@
 
   --color-acento: #00a298;
   --color-acento-texto: #007a72;
+  /* Fondo de los botones principales: con #00a298 el texto blanco no llega
+     al contraste mínimo. */
+  --color-acento-oscuro: #005c56;
   --color-acento-suave: #e6f5f4;
   --color-tinta: #1d1d1b;
 
   --color-texto: #101a24;
   --color-texto-2: #52627a;
-  --color-texto-3: #8494a8;
+  /* Rótulos chicos: más oscuro que antes para que se lean sobre blanco y gris. */
+  --color-texto-3: #55677d;
 
   --color-peligro: #c62828;
   --color-peligro-suave: #fdecec;

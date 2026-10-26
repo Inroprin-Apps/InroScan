@@ -70,7 +70,7 @@ export function Tarjeta({ children, className = "" }: { children: ReactNode; cla
 }
 
 export const botonPrincipal =
-  "rounded-chico bg-acento px-4 py-2.5 font-semibold text-white transition hover:bg-acento-texto disabled:cursor-not-allowed disabled:opacity-50";
+  "rounded-chico bg-acento-texto px-4 py-2.5 font-semibold text-white transition hover:bg-acento-oscuro disabled:cursor-not-allowed disabled:opacity-50";
 export const botonSecundario =
   "rounded-chico border border-borde-2 bg-superficie px-4 py-2.5 font-medium text-texto-2 transition hover:bg-superficie-2 disabled:cursor-not-allowed disabled:opacity-50";
 export const campo =

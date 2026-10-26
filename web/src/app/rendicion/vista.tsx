@@ -19,13 +19,13 @@ import type { Persona } from "@/lib/sesion";
 import { enlacesDeArchivos, leer, subir } from "@/lib/subida";
 import { EDITABLE, type Archivo, type Caja, type Catalogos, type Comprobante, type Rendicion } from "@/lib/tipos";
 import { ConSesion } from "../marco";
-import { tituloRendicion } from "../mis-rendiciones";
+import { recargarRendiciones, tituloRendicion } from "@/lib/rendiciones";
 import { Aviso, BarraConsumo, Estado, Tarjeta, botonPrincipal, botonSecundario, campo } from "../piezas";
 
 export function VistaRendicion() {
   const id = useSearchParams().get("id");
   return (
-    <ConSesion>
+    <ConSesion activo={id ?? undefined}>
       {(persona) =>
         id ? <HojaRendicion id={id} persona={persona} /> : <Aviso>Falta indicar qué rendición abrir.</Aviso>
       }
@@ -121,6 +121,8 @@ function HojaRendicion({ id, persona }: { id: string; persona: Persona }) {
     setAviso(null);
     try {
       await accion();
+      // La barra lateral y el inicio muestran el avance: que se enteren.
+      recargarRendiciones();
     } catch (e) {
       setError((e as Error).message);
       setIntento((n) => n + 1);
@@ -332,7 +334,7 @@ function Cabecera({
     <Tarjeta>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="font-display text-2xl font-bold text-tinta">{tituloRendicion(r, caja)}</h1>
+          <h1 className="font-display text-2xl font-bold text-tinta">{tituloRendicion({ ...r, caja })}</h1>
           {r.version > 0 && <p className="mt-1 text-sm text-texto-3">Versión {r.version}</p>}
         </div>
         <Estado estado={r.estado} />

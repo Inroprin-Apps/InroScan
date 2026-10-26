@@ -4,5 +4,5 @@ import { ConSesion } from "./marco";
 import { MisRendiciones } from "./mis-rendiciones";
 
 export function Inicio() {
-  return <ConSesion>{(persona) => <MisRendiciones persona={persona} />}</ConSesion>;
+  return <ConSesion activo="inicio">{(persona) => <MisRendiciones persona={persona} />}</ConSesion>;
 }

@@ -50,6 +50,7 @@ export type Rendicion = {
   observacion: string;
   enviada_en: string | null;
   creado_en: string;
+  actualizado_en: string;
 };
 
 export type Caja = {

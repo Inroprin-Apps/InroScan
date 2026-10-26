@@ -1,234 +1,249 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
-import { useCatalogos } from "@/lib/catalogos";
-import { cuentas, aNumero, soles } from "@/lib/cuentas";
-import { crearMemo, crearReposicion, leerMisCajas, leerMisRendiciones, type RendicionConResumen } from "@/lib/datos";
+import { useCallback, useState } from "react";
+import { faltan } from "@/lib/comprobante";
+import { aNumero, cuentas, soles } from "@/lib/cuentas";
+import type { RendicionConResumen } from "@/lib/datos";
+import { cuando, fechaCorta } from "@/lib/fechas";
+import { ABIERTAS, CERRADAS, tituloRendicion, useRendiciones } from "@/lib/rendiciones";
 import type { Persona } from "@/lib/sesion";
-import type { Caja } from "@/lib/tipos";
-import { Aviso, BarraConsumo, Estado, Tarjeta, botonPrincipal, botonSecundario, campo } from "./piezas";
+import { NuevaRendicion } from "./nueva-rendicion";
+import { Aviso, Estado, botonPrincipal } from "./piezas";
 
-export const tituloRendicion = (r: { tipo: string; numero_memo: string | null; correlativo: number | null }, caja?: Caja | null) =>
-  r.tipo === "memo" ? `Memo ${r.numero_memo}` : `Caja ${caja?.numero ?? "?"} · Reposición ${r.correlativo}`;
+type Pestana = "abiertas" | "revision" | "cerradas";
 
-const hoy = () => new Date().toLocaleDateString("en-CA"); // AAAA-MM-DD en la hora local
+const en = (lista: readonly string[], estado: string) => lista.includes(estado);
+
+/** Cómo va una rendición, listo para mostrar. */
+function resumen(r: RendicionConResumen) {
+  const c = cuentas(r.comprobantes, r.monto, r.no_sustentan ?? []);
+  const porCompletar = r.comprobantes.filter((x) => faltan(x).length > 0).length;
+  const saldo =
+    c.saldo < 0 ? `${soles(-c.saldo)} a reembolsar` : `${soles(c.saldo)} ${r.tipo === "caja" ? "en caja" : "por devolver"}`;
+  return { c, porCompletar, saldo };
+}
 
 export function MisRendiciones({ persona }: { persona: Persona }) {
-  const router = useRouter();
-  const { catalogos } = useCatalogos();
-  const [rendiciones, setRendiciones] = useState<RendicionConResumen[] | null>(null);
-  const [cajas, setCajas] = useState<Caja[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [nuevoMemo, setNuevoMemo] = useState(false);
+  const { rendiciones, error } = useRendiciones();
+  const [pestana, setPestana] = useState<Pestana | null>(null);
+  const [nueva, setNueva] = useState(false);
+  const cerrarNueva = useCallback(() => setNueva(false), []);
 
-  const cargar = useCallback(async () => {
-    try {
-      const [r, c] = await Promise.all([leerMisRendiciones(), leerMisCajas(persona.id)]);
-      setRendiciones(r);
-      setCajas(c);
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }, [persona.id]);
+  const mias = (rendiciones ?? []).filter((r) => r.responsable_id === persona.id);
+  const abiertas = mias.filter((r) => en(ABIERTAS, r.estado));
+  const enRevision = mias.filter((r) => r.estado === "enviada");
+  const cerradas = mias.filter((r) => en(CERRADAS, r.estado));
+  const observadas = mias.filter((r) => r.estado === "observada");
 
-  useEffect(() => {
-    // Se lee al entrar; setState ocurre después del await, no en el render.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    cargar();
-  }, [cargar]);
+  // Sin elección, se abre la primera pestaña que tenga algo.
+  const vista: Pestana = pestana ?? (abiertas.length ? "abiertas" : enRevision.length ? "revision" : "abiertas");
+  const lista = { abiertas, revision: enRevision, cerradas }[vista];
 
-  const abrir = (id: string) => router.push(`/rendicion/?id=${id}`);
-
-  const reponer = async (caja: Caja) => {
-    setError(null);
-    try {
-      abrir(await crearReposicion(caja, persona.id));
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  };
-
-  // Una caja con su ciclo en curso no ofrece abrir otro: la base no lo
-  // permitiría, y el botón sería una invitación a un error.
-  const enCurso = new Set(
-    (rendiciones ?? []).filter((r) => ["abierta", "enviada", "observada"].includes(r.estado)).map((r) => r.caja_id),
-  );
-  const cajaDe = (id: number | null) => cajas.find((c) => c.id === id) ?? null;
+  const sumar = (l: RendicionConResumen[], f: (r: RendicionConResumen) => number) => l.reduce((s, r) => s + f(r), 0);
+  const gastadoAbiertas = sumar(abiertas, (r) => resumen(r).c.gastado);
+  const montoAbiertas = sumar(abiertas, (r) => aNumero(r.monto));
+  const porDevolver = sumar(abiertas, (r) => Math.max(resumen(r).c.saldo, 0));
+  const aReembolsar = sumar(abiertas, (r) => Math.max(-resumen(r).c.saldo, 0));
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+    <div className="space-y-5">
+      <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="font-display text-2xl font-bold text-tinta">
-            {persona.es_administracion ? "Rendiciones" : "Mis rendiciones"}
-          </h1>
-          <p className="mt-1 text-texto-2">
-            {persona.es_administracion
-              ? "Como administración ves las de todos."
-              : "Tus memos de viáticos y las cajas chicas que administras."}
-          </p>
+          <h1 className="font-display text-2xl font-bold text-tinta">Mis rendiciones</h1>
+          <p className="mt-1 text-texto-2">Tus memos de viáticos y las cajas chicas que administras.</p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {cajas
-            .filter((c) => !enCurso.has(c.id))
-            .map((c) => (
-              <button key={c.id} type="button" onClick={() => reponer(c)} className={botonSecundario}>
-                Nueva reposición · Caja {c.numero}
-              </button>
-            ))}
-          <button type="button" onClick={() => setNuevoMemo(true)} className={botonPrincipal} disabled={nuevoMemo}>
-            Nuevo memo
-          </button>
-        </div>
-      </div>
+        <button type="button" onClick={() => setNueva(true)} className={botonPrincipal}>
+          Nueva rendición
+        </button>
+      </header>
 
       {error && <Aviso>{error}</Aviso>}
-
-      {nuevoMemo && (
-        <FormularioMemo
-          persona={persona}
-          empresas={(catalogos?.empresas ?? []).filter((e) => e.activo)}
-          onCancelar={() => setNuevoMemo(false)}
-          onCreado={abrir}
-        />
+      {rendiciones == null && !error && (
+        <p className="text-texto-3" role="status">
+          Cargando…
+        </p>
       )}
 
-      {rendiciones == null && !error && <p className="text-texto-3" role="status">Cargando…</p>}
-
-      {rendiciones?.length === 0 && !nuevoMemo && (
-        <Tarjeta>
-          <p className="text-texto-2">
-            Todavía no tienes rendiciones. Empieza con <b>Nuevo memo</b> cuando recibas el dinero de un viaje.
-          </p>
-        </Tarjeta>
+      {rendiciones && (
+        <section aria-label="Resumen" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <Indicador titulo="En curso" valor={String(abiertas.length)} detalle={`${soles(gastadoAbiertas)} de ${soles(montoAbiertas)}`} />
+          <Indicador titulo="En revisión" valor={String(enRevision.length)} detalle="Esperando a administración" />
+          <Indicador
+            titulo="Observadas"
+            valor={String(observadas.length)}
+            detalle={observadas[0] ? `${tituloRendicion(observadas[0])}: ${observadas[0].observacion || "revisa las filas marcadas"}` : "Nada pendiente"}
+            alerta={observadas.length > 0}
+          />
+          <Indicador
+            titulo="Por devolver"
+            valor={soles(porDevolver)}
+            detalle={aReembolsar > 0 ? `y ${soles(aReembolsar)} a reembolsarte` : "De lo que sigue abierto"}
+          />
+        </section>
       )}
 
-      <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {rendiciones?.map((r) => {
-          const c = cuentas(r.comprobantes, r.monto, r.no_sustentan ?? []);
-          return (
-            <li key={r.id}>
-              <Link
-                href={`/rendicion/?id=${r.id}`}
-                className="block h-full rounded-grande bg-superficie p-5 shadow-sm transition hover:shadow-md"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <h2 className="font-display text-lg font-semibold text-tinta">{tituloRendicion(r, cajaDe(r.caja_id))}</h2>
-                  <Estado estado={r.estado} />
-                </div>
-                <p className="mt-1 text-sm text-texto-3">
-                  Solicitado el {new Date(`${r.fecha_solicitud}T00:00`).toLocaleDateString("es-PE")} ·{" "}
-                  {c.comprobantes} comprobante{c.comprobantes === 1 ? "" : "s"}
-                </p>
-                <div className="mt-4">
-                  <BarraConsumo gastado={c.gastado} monto={aNumero(r.monto)} consumo={c.consumo} />
-                </div>
-              </Link>
-            </li>
-          );
-        })}
-      </ul>
+      {rendiciones && (
+        <section className="rounded-grande bg-superficie p-4 shadow-sm">
+          <div role="tablist" aria-label="Estado" className="flex flex-wrap gap-1.5">
+            <Pestanita activa={vista === "abiertas"} onClick={() => setPestana("abiertas")}>
+              Abiertas · {abiertas.length}
+            </Pestanita>
+            <Pestanita activa={vista === "revision"} onClick={() => setPestana("revision")}>
+              En revisión · {enRevision.length}
+            </Pestanita>
+            <Pestanita activa={vista === "cerradas"} onClick={() => setPestana("cerradas")}>
+              Cerradas · {cerradas.length}
+            </Pestanita>
+          </div>
+
+          {lista.length === 0 ? (
+            <p className="mt-4 text-texto-2">
+              {vista === "abiertas" ? (
+                <>
+                  No tienes rendiciones abiertas. Empieza con{" "}
+                  <button type="button" onClick={() => setNueva(true)} className="font-semibold text-acento-texto underline">
+                    Nueva rendición
+                  </button>{" "}
+                  cuando recibas el dinero de un viaje o repongas una caja.
+                </>
+              ) : vista === "revision" ? (
+                "Nada esperando revisión."
+              ) : (
+                "Todavía no hay rendiciones cerradas."
+              )}
+            </p>
+          ) : (
+            <>
+              <div className="mt-3 hidden overflow-x-auto rounded-chico border border-borde md:block">
+                <table className="w-full min-w-[860px] border-collapse text-sm">
+                  <thead>
+                    <tr className="bg-superficie-2 text-left text-[11px] font-bold uppercase tracking-wider text-texto-3">
+                      <th scope="col" className="px-3 py-2.5">Rendición</th>
+                      <th scope="col" className="px-3 py-2.5">Solicitada</th>
+                      <th scope="col" className="px-3 py-2.5">Comprobantes</th>
+                      <th scope="col" className="w-[30%] px-3 py-2.5">Avance</th>
+                      <th scope="col" className="px-3 py-2.5 text-right">Saldo</th>
+                      <th scope="col" className="px-3 py-2.5">Estado</th>
+                      <th scope="col" className="px-3 py-2.5">Último cambio</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lista.map((r) => {
+                      const { c, porCompletar, saldo } = resumen(r);
+                      return (
+                        <tr key={r.id} className="border-t border-borde">
+                          <td className="px-3 py-3">
+                            <Link href={`/rendicion/?id=${r.id}`} className="font-semibold text-acento-texto hover:underline">
+                              {tituloRendicion(r)}
+                            </Link>
+                            <span className="block text-xs text-texto-3">{r.tipo === "memo" ? "Memo de viáticos" : "Caja chica"}</span>
+                          </td>
+                          <td className="px-3 py-3">{fechaCorta(r.fecha_solicitud)}</td>
+                          <td className="px-3 py-3">
+                            {c.comprobantes}
+                            <span className={`block text-xs ${porCompletar ? "font-semibold text-aviso" : "text-texto-3"}`}>
+                              {porCompletar ? `${porCompletar} por completar` : c.comprobantes ? "Todo completo" : "Sin comprobantes"}
+                            </span>
+                          </td>
+                          <td className="px-3 py-3">
+                            <Avance consumo={c.consumo} texto={`${soles(c.gastado)} de ${soles(r.monto)}`} rojo={r.estado === "observada"} />
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">{saldo}</td>
+                          <td className="px-3 py-3">
+                            <Estado estado={r.estado} />
+                          </td>
+                          <td className="px-3 py-3 text-[13px] text-texto-3">{cuando(r.actualizado_en ?? r.creado_en)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <ul className="mt-3 space-y-2 md:hidden">
+                {lista.map((r) => {
+                  const { c, porCompletar, saldo } = resumen(r);
+                  return (
+                    <li key={r.id}>
+                      <Link href={`/rendicion/?id=${r.id}`} className="block rounded-medio border border-borde p-3.5">
+                        <span className="flex items-start justify-between gap-2">
+                          <span className="font-semibold text-tinta">{tituloRendicion(r)}</span>
+                          <Estado estado={r.estado} />
+                        </span>
+                        <span className="mt-1 block text-xs text-texto-3">
+                          {c.comprobantes} comprobante{c.comprobantes === 1 ? "" : "s"}
+                          {porCompletar ? ` · ${porCompletar} por completar` : ""} · {saldo}
+                        </span>
+                        <span className="mt-2.5 block">
+                          <Avance consumo={c.consumo} texto={`${soles(c.gastado)} de ${soles(r.monto)}`} rojo={r.estado === "observada"} />
+                        </span>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            </>
+          )}
+        </section>
+      )}
+
+      {nueva && <NuevaRendicion persona={persona} onCerrar={cerrarNueva} />}
     </div>
   );
 }
 
-function FormularioMemo({
-  persona,
-  empresas,
-  onCancelar,
-  onCreado,
+export function Indicador({
+  titulo,
+  valor,
+  detalle,
+  alerta,
 }: {
-  persona: Persona;
-  empresas: { id: number; nombre: string }[];
-  onCancelar: () => void;
-  onCreado: (id: string) => void;
+  titulo: string;
+  valor: string;
+  detalle: string;
+  alerta?: boolean;
 }) {
-  const [numero, setNumero] = useState("");
-  const [monto, setMonto] = useState("");
-  const [fecha, setFecha] = useState(hoy());
-  const [empresaElegida, setEmpresa] = useState<number | null>(null);
-  const [guardando, setGuardando] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // Con una sola empresa activa no hay nada que elegir.
-  const empresa = empresaElegida ?? (empresas.length === 1 ? empresas[0].id : null);
-
-  const crear = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const importe = aNumero(monto);
-    if (!numero.trim()) return setError("Escribe el número de memo.");
-    if (!(importe > 0)) return setError("Escribe el monto que recibiste.");
-    if (empresa == null) return setError("Elige la empresa.");
-    setGuardando(true);
-    setError(null);
-    try {
-      onCreado(
-        await crearMemo({
-          numero_memo: numero.trim(),
-          monto: importe,
-          fecha_solicitud: fecha,
-          empresa_id: empresa,
-          responsable_id: persona.id,
-        }),
-      );
-    } catch (err) {
-      setError((err as Error).message);
-      setGuardando(false);
-    }
-  };
-
   return (
-    <Tarjeta>
-      <form onSubmit={crear} className="space-y-4">
-        <h2 className="font-display text-lg font-semibold text-tinta">Nuevo memo de viáticos</h2>
-        <div className="grid gap-4 sm:grid-cols-3">
-          <label className="block text-sm font-medium text-texto-2">
-            N° de memo
-            <input className={`mt-1 ${campo}`} value={numero} onChange={(e) => setNumero(e.target.value)} placeholder="675-2026" autoFocus />
-          </label>
-          <label className="block text-sm font-medium text-texto-2">
-            Monto recibido
-            <input
-              className={`mt-1 ${campo}`}
-              value={monto}
-              onChange={(e) => setMonto(e.target.value)}
-              inputMode="decimal"
-              placeholder="0.00"
-            />
-          </label>
-          <label className="block text-sm font-medium text-texto-2">
-            Fecha de solicitud
-            <input className={`mt-1 ${campo}`} type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
-          </label>
-          {empresas.length > 1 && (
-            <label className="block text-sm font-medium text-texto-2 sm:col-span-3">
-              Empresa
-              <select className={`mt-1 ${campo}`} value={empresa ?? ""} onChange={(e) => setEmpresa(Number(e.target.value) || null)}>
-                <option value="">Elige…</option>
-                {empresas.map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.nombre}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-        </div>
-        {error && <Aviso>{error}</Aviso>}
-        {monto && aNumero(monto) > 0 && (
-          <p className="text-sm text-texto-3">Vas a rendir {soles(aNumero(monto))}.</p>
-        )}
-        <div className="flex gap-2">
-          <button type="submit" className={botonPrincipal} disabled={guardando}>
-            {guardando ? "Creando…" : "Crear memo"}
-          </button>
-          <button type="button" className={botonSecundario} onClick={onCancelar} disabled={guardando}>
-            Cancelar
-          </button>
-        </div>
-      </form>
-    </Tarjeta>
+    <div className={`rounded-grande p-4 shadow-sm ${alerta ? "bg-peligro-suave text-peligro" : "bg-superficie"}`}>
+      <p className={`text-xs font-bold uppercase tracking-wider ${alerta ? "" : "text-texto-3"}`}>{titulo}</p>
+      <p className="mt-1.5 font-display text-2xl font-bold">{valor}</p>
+      <p className={`mt-0.5 line-clamp-2 text-[13px] ${alerta ? "" : "text-texto-3"}`}>{detalle}</p>
+    </div>
+  );
+}
+
+export function Pestanita({ activa, onClick, children }: { activa: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={activa}
+      onClick={onClick}
+      className={`h-8.5 rounded-full px-3 text-[13px] transition ${
+        activa ? "bg-tinta font-semibold text-white" : "border border-borde-2 bg-superficie font-medium text-texto-2 hover:bg-superficie-2"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function Avance({ consumo, texto, rojo }: { consumo: number | null; texto: string; rojo?: boolean }) {
+  const pasado = consumo != null && consumo > 100;
+  return (
+    <span className="flex items-center gap-2.5">
+      <span
+        className="h-2 flex-1 overflow-hidden rounded-full bg-borde"
+        role="progressbar"
+        aria-label="Gastado del monto"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.min(consumo ?? 0, 100)}
+      >
+        <span className={`block h-full ${rojo || pasado ? "bg-peligro" : "bg-acento"}`} style={{ width: `${Math.min(consumo ?? 0, 100)}%` }} />
+      </span>
+      <span className="whitespace-nowrap text-[13px] text-texto-2">{texto}</span>
+    </span>
   );
 }

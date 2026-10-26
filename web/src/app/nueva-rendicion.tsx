@@ -1,0 +1,199 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+import { useCatalogos } from "@/lib/catalogos";
+import { aNumero, soles } from "@/lib/cuentas";
+import { crearMemo, crearReposicion, leerMisCajas } from "@/lib/datos";
+import { EN_CURSO, recargarRendiciones, useRendiciones } from "@/lib/rendiciones";
+import type { Persona } from "@/lib/sesion";
+import type { Caja } from "@/lib/tipos";
+import { IconoCerrar } from "./iconos";
+import { Aviso, botonPrincipal, botonSecundario, campo } from "./piezas";
+
+const hoy = () => new Date().toLocaleDateString("en-CA"); // AAAA-MM-DD en la hora local
+
+/** Abrir un memo de viáticos o la reposición que sigue de una caja propia. */
+export function NuevaRendicion({ persona, onCerrar }: { persona: Persona; onCerrar: () => void }) {
+  const router = useRouter();
+  const { catalogos } = useCatalogos();
+  const { rendiciones } = useRendiciones();
+  const [cajas, setCajas] = useState<Caja[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const dialogo = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let vigente = true;
+    leerMisCajas(persona.id).then(
+      (c) => vigente && setCajas(c),
+      () => {},
+    );
+    dialogo.current?.querySelector<HTMLInputElement>("input")?.focus();
+    const alTeclear = (e: KeyboardEvent) => e.key === "Escape" && onCerrar();
+    window.addEventListener("keydown", alTeclear);
+    return () => {
+      vigente = false;
+      window.removeEventListener("keydown", alTeclear);
+    };
+  }, [persona.id, onCerrar]);
+
+  const abrir = async (id: string) => {
+    await recargarRendiciones();
+    onCerrar();
+    router.push(`/rendicion/?id=${id}`);
+  };
+
+  // Una caja con su ciclo en curso no ofrece abrir otro: la base no lo permitiría.
+  const ocupadas = new Set(
+    (rendiciones ?? []).filter((r) => (EN_CURSO as readonly string[]).includes(r.estado)).map((r) => r.caja_id),
+  );
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-end justify-center bg-tinta/40 p-0 sm:items-center sm:p-4" onClick={onCerrar}>
+      <div
+        ref={dialogo}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="nueva-titulo"
+        className="max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-t-grande bg-superficie p-5 shadow-xl sm:rounded-grande sm:p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-3">
+          <h2 id="nueva-titulo" className="font-display text-lg font-bold text-tinta">
+            Nueva rendición
+          </h2>
+          <button type="button" onClick={onCerrar} aria-label="Cerrar" className="rounded-chico p-2 text-texto-2 hover:bg-superficie-2">
+            <IconoCerrar />
+          </button>
+        </div>
+
+        {cajas.length > 0 && (
+          <div className="mt-4 space-y-2">
+            <p className="text-sm font-medium text-texto-2">Caja chica que administras</p>
+            {cajas.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                disabled={ocupadas.has(c.id)}
+                onClick={async () => {
+                  setError(null);
+                  try {
+                    await abrir(await crearReposicion(c, persona.id));
+                  } catch (e) {
+                    setError((e as Error).message);
+                  }
+                }}
+                className={`flex w-full items-center justify-between gap-3 text-left ${botonSecundario}`}
+              >
+                <span>Nueva reposición · Caja {c.numero}</span>
+                <span className="text-sm text-texto-2">
+                  {ocupadas.has(c.id) ? "Tiene una en curso" : `Fondo ${soles(c.monto_fondo)}`}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        <FormularioMemo
+          persona={persona}
+          empresas={(catalogos?.empresas ?? []).filter((e) => e.activo)}
+          onCreado={abrir}
+          conCajas={cajas.length > 0}
+        />
+        {error && (
+          <div className="mt-3">
+            <Aviso>{error}</Aviso>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function FormularioMemo({
+  persona,
+  empresas,
+  onCreado,
+  conCajas,
+}: {
+  persona: Persona;
+  empresas: { id: number; nombre: string }[];
+  onCreado: (id: string) => Promise<void>;
+  conCajas: boolean;
+}) {
+  const [numero, setNumero] = useState("");
+  const [monto, setMonto] = useState("");
+  const [fecha, setFecha] = useState(hoy());
+  const [empresaElegida, setEmpresa] = useState<number | null>(null);
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Con una sola empresa activa no hay nada que elegir.
+  const empresa = empresaElegida ?? (empresas.length === 1 ? empresas[0].id : null);
+
+  const crear = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const importe = aNumero(monto);
+    if (!numero.trim()) return setError("Escribe el número de memo.");
+    if (!(importe > 0)) return setError("Escribe el monto que recibiste.");
+    if (empresa == null) return setError("Elige la empresa.");
+    setGuardando(true);
+    setError(null);
+    try {
+      await onCreado(
+        await crearMemo({
+          numero_memo: numero.trim(),
+          monto: importe,
+          fecha_solicitud: fecha,
+          empresa_id: empresa,
+          responsable_id: persona.id,
+        }),
+      );
+    } catch (err) {
+      setError((err as Error).message);
+      setGuardando(false);
+    }
+  };
+
+  return (
+    <form onSubmit={crear} className={`space-y-4 ${conCajas ? "mt-6 border-t border-borde pt-5" : "mt-4"}`}>
+      <p className="text-sm font-medium text-texto-2">Memo de viáticos</p>
+      <div className="grid gap-4 sm:grid-cols-3">
+        <label className="block text-sm font-medium text-texto-2">
+          N° de memo
+          <input className={`mt-1 ${campo}`} value={numero} onChange={(e) => setNumero(e.target.value)} placeholder="675-2026" />
+        </label>
+        <label className="block text-sm font-medium text-texto-2">
+          Monto recibido
+          <input
+            className={`mt-1 ${campo}`}
+            value={monto}
+            onChange={(e) => setMonto(e.target.value)}
+            inputMode="decimal"
+          />
+        </label>
+        <label className="block text-sm font-medium text-texto-2">
+          Fecha de solicitud
+          <input className={`mt-1 ${campo}`} type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
+        </label>
+        {empresas.length > 1 && (
+          <label className="block text-sm font-medium text-texto-2 sm:col-span-3">
+            Empresa
+            <select className={`mt-1 ${campo}`} value={empresa ?? ""} onChange={(e) => setEmpresa(Number(e.target.value) || null)}>
+              <option value="">Elige…</option>
+              {empresas.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.nombre}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+      </div>
+      {error && <Aviso>{error}</Aviso>}
+      <button type="submit" className={`w-full ${botonPrincipal}`} disabled={guardando}>
+        {guardando ? "Creando…" : "Crear memo"}
+      </button>
+    </form>
+  );
+}
