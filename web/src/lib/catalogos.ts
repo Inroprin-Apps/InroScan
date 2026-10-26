@@ -1,30 +1,42 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 import { leerCatalogos } from "./datos";
 import type { Catalogos } from "./tipos";
 
-// Cambian muy de vez en cuando: se leen una vez por visita, no por pantalla.
-let enCurso: Promise<Catalogos> | null = null;
+// Cambian muy de vez en cuando: se leen una vez por visita, no por pantalla,
+// y se vuelven a leer cuando administración los edita.
+type Estado = { catalogos: Catalogos | null; error: string | null };
 
-export function useCatalogos(): { catalogos: Catalogos | null; error: string | null } {
-  const [catalogos, setCatalogos] = useState<Catalogos | null>(null);
-  const [error, setError] = useState<string | null>(null);
+let actual: Estado = { catalogos: null, error: null };
+let enCurso: Promise<void> | null = null;
+const oyentes = new Set<() => void>();
 
-  useEffect(() => {
-    enCurso ??= leerCatalogos();
-    let vigente = true;
-    enCurso.then(
-      (c) => vigente && setCatalogos(c),
-      (e: Error) => {
-        enCurso = null; // que el próximo intento vuelva a pedirlos
-        if (vigente) setError(e.message);
+export function recargarCatalogos(): Promise<void> {
+  enCurso = leerCatalogos()
+    .then(
+      (catalogos) => {
+        actual = { catalogos, error: null };
       },
-    );
-    return () => {
-      vigente = false;
-    };
-  }, []);
+      (e: Error) => {
+        actual = { ...actual, error: e.message };
+      },
+    )
+    .finally(() => {
+      enCurso = null;
+      oyentes.forEach((f) => f());
+    });
+  return enCurso;
+}
 
-  return { catalogos, error };
+function suscribir(f: () => void) {
+  oyentes.add(f);
+  if (!actual.catalogos && !enCurso) recargarCatalogos();
+  return () => oyentes.delete(f);
+}
+
+const sinDatos: Estado = { catalogos: null, error: null };
+
+export function useCatalogos(): Estado {
+  return useSyncExternalStore(suscribir, () => actual, () => sinDatos);
 }

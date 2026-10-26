@@ -23,6 +23,7 @@ export function mensajeDeBase(e: ErrorDeBase): string {
       if (texto.includes("una_reposicion_en_curso")) {
         return "Esta caja ya tiene una reposición en curso: ciérrala antes de abrir otra.";
       }
+      if (texto.includes("cajas_numero_key")) return "Ya existe una caja con ese número.";
       if (texto.includes("archivos_rendicion_id_huella_key")) {
         return "Ese archivo ya está subido en esta rendición.";
       }

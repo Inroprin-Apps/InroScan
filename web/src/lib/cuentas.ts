@@ -13,6 +13,7 @@ export type FilaParaCuentas = {
   total: number | string | null;
   tipo_comprobante_id: string | null;
   descartado: boolean;
+  moneda?: string;
 };
 
 export type Cuentas = {
@@ -24,6 +25,8 @@ export type Cuentas = {
   /** Cuánto del monto se gastó, 0–100+. Nulo si no hay monto. */
   consumo: number | null;
   comprobantes: number;
+  /** Lo que está en dólares: no se suma a los soles ni se convierte acá. */
+  dolares: number;
   porTipo: { tipo: string; cuantos: number; importe: number; sustenta: boolean }[];
 };
 
@@ -42,9 +45,14 @@ export function cuentas(filas: FilaParaCuentas[], monto: number | string, noSust
 
   let gastado = 0;
   let sustentado = 0;
+  let dolares = 0;
   const porTipo = new Map<string, { tipo: string; cuantos: number; importe: number; sustenta: boolean }>();
   for (const f of vivas) {
     const importe = aNumero(f.total);
+    if (f.moneda === "USD") {
+      dolares += importe;
+      continue;
+    }
     gastado += importe;
     const tipo = f.tipo_comprobante_id ?? "SIN_TIPO";
     const sustenta = tipo !== "SIN_TIPO" && !excluidos.has(tipo);
@@ -63,6 +71,7 @@ export function cuentas(filas: FilaParaCuentas[], monto: number | string, noSust
     saldo: centimos(recibido - gastado),
     consumo: recibido > 0 ? Math.round((gastado / recibido) * 100) : null,
     comprobantes: vivas.length,
+    dolares: centimos(dolares),
     porTipo: [...porTipo.values()].sort((a, b) => b.importe - a.importe),
   };
 }

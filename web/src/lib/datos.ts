@@ -34,7 +34,7 @@ export async function leerCatalogos(): Promise<Catalogos> {
 
 export type FilaResumen = Pick<
   Comprobante,
-  "total" | "tipo_comprobante_id" | "descartado" | "fecha" | "numero" | "proyecto_id" | "concepto_id"
+  "total" | "tipo_comprobante_id" | "descartado" | "fecha" | "numero" | "proyecto_id" | "concepto_id" | "moneda" | "observacion"
 >;
 export type RendicionConResumen = Rendicion & {
   comprobantes: FilaResumen[];
@@ -47,7 +47,7 @@ export async function leerRendiciones(): Promise<RendicionConResumen[]> {
   const r = await supabase()
     .from("rendiciones")
     .select(
-      "*, caja:cajas(numero), responsable:personas(nombre, correo), comprobantes(total, tipo_comprobante_id, descartado, fecha, numero, proyecto_id, concepto_id)",
+      "*, caja:cajas(numero), responsable:personas(nombre, correo), comprobantes(total, tipo_comprobante_id, descartado, fecha, numero, proyecto_id, concepto_id, moneda, observacion)",
     )
     .order("creado_en", { ascending: false });
   return exigir(r) as RendicionConResumen[];

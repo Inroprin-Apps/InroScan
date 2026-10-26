@@ -60,6 +60,18 @@ describe("cuentas de la rendición", () => {
     expect(cuentas([fila(50, "TICKET")], 0, []).consumo).toBeNull();
   });
 
+  it("los dólares no se suman a los soles", () => {
+    const c = cuentas(
+      [
+        { total: "100.00", tipo_comprobante_id: "FACTURA", descartado: false },
+        { total: "40.00", tipo_comprobante_id: "BOLETA", descartado: false, moneda: "USD" },
+      ],
+      200,
+      [],
+    );
+    expect(c).toMatchObject({ gastado: 100, sustentado: 100, saldo: 100, dolares: 40, comprobantes: 2 });
+  });
+
   it("escribe los soles como en Perú", () => {
     expect(soles(1234.5)).toBe("S/ 1,234.50");
     expect(soles(null)).toBe("S/ 0.00");

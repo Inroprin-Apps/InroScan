@@ -117,6 +117,7 @@ export function Resumen({
       </Dato>
       <Dato titulo="Gastado">
         <Cifra>{soles(c.gastado)}</Cifra>
+        {c.dolares > 0 && <span className="block text-xs text-texto-3">y US$ {c.dolares.toFixed(2)} sin convertir</span>}
       </Dato>
       <Dato titulo="Sustentado">
         <Cifra>{soles(c.sustentado)}</Cifra>

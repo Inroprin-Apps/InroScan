@@ -86,7 +86,10 @@ export function Hoja({
     setElegidas(new Set());
   };
 
-  const total = conEstado.filter(({ e }) => e.clave !== "descartado").reduce((s, { c }) => s + (c.total == null ? 0 : aNumero(c.total)), 0);
+  // Los dólares no se suman a los soles: se muestran aparte.
+  const vigentes = conEstado.filter(({ e }) => e.clave !== "descartado").map(({ c }) => c);
+  const total = vigentes.filter((c) => c.moneda !== "USD").reduce((s, c) => s + (c.total == null ? 0 : aNumero(c.total)), 0);
+  const dolares = vigentes.filter((c) => c.moneda === "USD").reduce((s, c) => s + (c.total == null ? 0 : aNumero(c.total)), 0);
 
   return (
     <section aria-label="Comprobantes" className="flex min-w-0 flex-col gap-3 rounded-grande bg-superficie p-3 shadow-sm sm:p-4">
@@ -190,7 +193,10 @@ export function Hoja({
                     {cuenta.todos} comprobante{cuenta.todos === 1 ? "" : "s"}
                     {cuenta.descartados > 0 && ` · ${cuenta.descartados} descartado${cuenta.descartados === 1 ? "" : "s"} no suma${cuenta.descartados === 1 ? "" : "n"}`}
                   </td>
-                  <td className="whitespace-nowrap px-2 py-3 text-right font-bold tabular-nums">{soles(total)}</td>
+                  <td className="whitespace-nowrap px-2 py-3 text-right font-bold tabular-nums">
+                    {soles(total)}
+                    {dolares > 0 && <span className="block text-xs font-normal text-texto-3">y US$ {dolares.toFixed(2)}</span>}
+                  </td>
                   <td />
                 </tr>
               </tfoot>

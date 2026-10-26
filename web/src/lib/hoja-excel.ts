@@ -95,3 +95,19 @@ export async function descargarExcel(nombreArchivo: string, filas: Celda[][]): P
   enlace.click();
   setTimeout(() => URL.revokeObjectURL(enlace.href), 10_000);
 }
+
+/** Una tabla cualquiera (un reporte, por ejemplo) a .xlsx, con los títulos en negrita. */
+export async function descargarTabla(nombreArchivo: string, columnas: string[], filas: Celda[][]): Promise<void> {
+  const { Workbook } = (await import("exceljs")).default;
+  const libro = new Workbook();
+  const hoja = libro.addWorksheet("Reporte", { views: [{ state: "frozen", ySplit: 1 }] });
+  hoja.columns = columnas.map((c, i) => ({ header: c, width: i === 0 ? 40 : 16 }));
+  hoja.getRow(1).font = { bold: true };
+  filas.forEach((f) => hoja.addRow(f));
+  const datos = await libro.xlsx.writeBuffer();
+  const enlace = document.createElement("a");
+  enlace.href = URL.createObjectURL(new Blob([datos], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+  enlace.download = `${nombreArchivo}.xlsx`;
+  enlace.click();
+  setTimeout(() => URL.revokeObjectURL(enlace.href), 10_000);
+}

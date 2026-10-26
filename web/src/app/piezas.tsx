@@ -75,3 +75,6 @@ export const botonSecundario =
   "rounded-chico border border-borde-2 bg-superficie px-4 py-2.5 font-medium text-texto-2 transition hover:bg-superficie-2 disabled:cursor-not-allowed disabled:opacity-50";
 export const campo =
   "w-full rounded-chico border border-borde-2 bg-superficie px-3 py-2 text-texto outline-none focus:border-acento focus:ring-2 focus:ring-acento-suave disabled:bg-superficie-2 disabled:text-texto-2";
+
+/** Un campo que no ocupa todo el ancho: para filtros en una misma línea. */
+export const campoSuelto = campo.replace("w-full ", "");
