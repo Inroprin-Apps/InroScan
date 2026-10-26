@@ -12,6 +12,8 @@ export type Comprobante = {
   id: string;
   rendicion_id: string;
   archivo_id: string | null;
+  /** La página del PDF de donde salió (1 en una foto). */
+  pagina: number;
   fecha: string | null;
   tipo_comprobante_id: string | null;
   serie: string;
@@ -74,3 +76,12 @@ export type Catalogos = {
 
 /** Mientras la rendición está así, su responsable la puede editar. */
 export const EDITABLE: EstadoRendicion[] = ["abierta", "observada"];
+
+/** Una foto o PDF subido. Sus comprobantes salen de leerlo. */
+export type Archivo = {
+  id: string;
+  ruta: string | null;
+  tipo_mime: string;
+  estado_lectura: "pendiente" | "procesando" | "leido" | "fallido";
+  error: string | null;
+};

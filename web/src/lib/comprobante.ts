@@ -44,3 +44,22 @@ export function faltan(c: FilaParaRevisar): string[] {
   if (c.concepto_id == null) falta.push("concepto");
   return falta;
 }
+
+export type Herencia = { proyecto_id: number | null; area_id: number | null; solicitante: string };
+
+/**
+ * Con qué arranca una fila nueva, para no volver a elegir lo mismo en cada
+ * comprobante: el proyecto, el área y el solicitante de la última fila que se
+ * llenó. En un memo, área y solicitante son siempre los de quien viajó.
+ */
+export function herencia(
+  filas: { proyecto_id: number | null; area_id: number | null; solicitante: string; descartado: boolean }[],
+  tipo: "memo" | "caja",
+  persona: { nombre: string; area_id: number | null },
+): Herencia {
+  const ultima = [...filas].reverse().find((f) => !f.descartado && (f.proyecto_id != null || f.area_id != null || f.solicitante));
+  if (tipo === "memo") {
+    return { proyecto_id: ultima?.proyecto_id ?? null, area_id: persona.area_id, solicitante: persona.nombre };
+  }
+  return { proyecto_id: ultima?.proyecto_id ?? null, area_id: ultima?.area_id ?? null, solicitante: ultima?.solicitante ?? "" };
+}

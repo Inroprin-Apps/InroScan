@@ -14,6 +14,12 @@ describe("errores de la base en palabras de la persona", () => {
     ).toMatch(/reposición en curso/);
   });
 
+  it("el mismo archivo dos veces", () => {
+    expect(
+      mensajeDeBase({ code: "23505", message: 'duplicate key value violates unique constraint "archivos_rendicion_id_huella_key"' }),
+    ).toMatch(/ya está subido/);
+  });
+
   it("RUC mal formado", () => {
     expect(
       mensajeDeBase({ code: "23514", message: 'new row for relation "comprobantes" violates check constraint "comprobantes_ruc_check"' }),

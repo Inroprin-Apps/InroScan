@@ -2,7 +2,7 @@
 
 import { FallaDeBase } from "./errores-de-base";
 import { supabase } from "./supabase";
-import type { Caja, Catalogos, Comprobante, Rendicion } from "./tipos";
+import type { Archivo, Caja, Catalogos, Comprobante, Rendicion } from "./tipos";
 
 /**
  * Todo lo que la app le pide a la base, en un solo lugar. Cada función lanza
@@ -85,18 +85,26 @@ export async function crearReposicion(caja: Caja, uid: string): Promise<string> 
   return exigir(r).id;
 }
 
-export async function leerRendicion(id: string): Promise<{ rendicion: Rendicion; caja: Caja | null; comprobantes: Comprobante[] }> {
+export type DatosRendicion = { rendicion: Rendicion; caja: Caja | null; comprobantes: Comprobante[]; archivos: Archivo[] };
+
+export async function leerRendicion(id: string): Promise<DatosRendicion> {
   const db = supabase();
-  const [rendicion, comprobantes] = await Promise.all([
+  const [rendicion, comprobantes, archivos] = await Promise.all([
     db.from("rendiciones").select("*").eq("id", id).single(),
-    db.from("comprobantes").select("*").eq("rendicion_id", id).order("creado_en"),
+    db.from("comprobantes").select("*").eq("rendicion_id", id).order("creado_en").order("pagina"),
+    db.from("archivos").select("id, ruta, tipo_mime, estado_lectura, error").eq("rendicion_id", id),
   ]);
   const r = exigir(rendicion) as Rendicion;
   let caja: Caja | null = null;
   if (r.caja_id != null) {
     caja = exigir(await db.from("cajas").select("*").eq("id", r.caja_id).single()) as Caja;
   }
-  return { rendicion: r, caja, comprobantes: exigir(comprobantes) as Comprobante[] };
+  return {
+    rendicion: r,
+    caja,
+    comprobantes: exigir(comprobantes) as Comprobante[],
+    archivos: exigir(archivos) as Archivo[],
+  };
 }
 
 export type CambiosComprobante = Partial<

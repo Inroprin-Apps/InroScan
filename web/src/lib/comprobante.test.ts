@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { faltan, numeroCompleto, partirNumero } from "./comprobante";
+import { faltan, herencia, numeroCompleto, partirNumero } from "./comprobante";
 
 describe("número de comprobante", () => {
   it("separa serie y número, conservando lo que se tecleó", () => {
@@ -51,5 +51,29 @@ describe("qué le falta a una fila", () => {
 
   it("lo descartado no bloquea el envío", () => {
     expect(faltan({ ...completa, fecha: null, descartado: true })).toEqual([]);
+  });
+});
+
+describe("herencia de una fila nueva", () => {
+  const persona = { nombre: "Ana Pérez", area_id: 3 };
+  const fila = (proyecto_id: number | null, area_id: number | null, solicitante: string, descartado = false) => ({
+    proyecto_id, area_id, solicitante, descartado,
+  });
+
+  it("en un memo: proyecto de la última fila, área y solicitante de quien viaja", () => {
+    expect(herencia([fila(1, 9, "OTRO"), fila(2, 9, "OTRO")], "memo", persona)).toEqual({
+      proyecto_id: 2, area_id: 3, solicitante: "Ana Pérez",
+    });
+  });
+
+  it("en una caja: todo de la última fila llenada, saltando descartadas y vacías", () => {
+    expect(herencia([fila(1, 4, "JUAN"), fila(5, 6, "LUIS", true), fila(null, null, "")], "caja", persona)).toEqual({
+      proyecto_id: 1, area_id: 4, solicitante: "JUAN",
+    });
+  });
+
+  it("sin filas: en blanco (en un memo, los datos de quien viaja)", () => {
+    expect(herencia([], "caja", persona)).toEqual({ proyecto_id: null, area_id: null, solicitante: "" });
+    expect(herencia([], "memo", persona)).toEqual({ proyecto_id: null, area_id: 3, solicitante: "Ana Pérez" });
   });
 });

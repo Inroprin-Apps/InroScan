@@ -21,9 +21,14 @@ Desde el 26 de octubre se construye su reemplazo, y cambian premisas de fondo:
 - **Pila nueva:**
   - `web/`: Next.js estático en GitHub Pages, bajo `/inroscan/web/`.
   - `supabase/`: base con permisos por fila, login con Google e imágenes en tránsito.
-  - `procesador/`: Python en una PC de administración. Lee con OCR + reglas +
-    clasificador, usa la IA solo para lo que falte, y genera la hoja de 14
-    columnas y el PDF de cada versión en Drive.
+  - `supabase/functions/leer`: lee cada foto o PDF **apenas se sube** (Gemini,
+    con la clave guardada como secreto en Supabase; nunca en el navegador).
+    Llena solo los campos vacíos, crea una fila por comprobante encontrado y
+    deja la imagen enlazada a su fila. Sin señal, la lectura ocurre cuando
+    el archivo termina de subir.
+  - `procesador/`: Python en una PC de administración. Genera la hoja de 14
+    columnas y el PDF de cada versión en Drive, y archiva las imágenes. Ya no
+    es el que lee: el 26-oct se decidió que la lectura sea inmediata.
 - **Caja chica:** la registra su administrador. El número de caja es fijo y
   cada ciclo es una reposición con correlativo. **Memo de viáticos:** mismos
   campos; quien viajó suma gastos hasta cerrar.

@@ -23,6 +23,9 @@ export function mensajeDeBase(e: ErrorDeBase): string {
       if (texto.includes("una_reposicion_en_curso")) {
         return "Esta caja ya tiene una reposición en curso: ciérrala antes de abrir otra.";
       }
+      if (texto.includes("archivos_rendicion_id_huella_key")) {
+        return "Ese archivo ya está subido en esta rendición.";
+      }
       return "Eso ya está registrado.";
     case "23514":
       if (texto.includes("ruc")) return "El RUC tiene 11 dígitos y empieza en 10, 15, 17 o 20.";

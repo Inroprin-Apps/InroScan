@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useCatalogos } from "@/lib/catalogos";
-import { faltan, numeroCompleto, partirNumero } from "@/lib/comprobante";
+import { faltan, herencia, numeroCompleto, partirNumero } from "@/lib/comprobante";
 import { aNumero, cuentas, soles } from "@/lib/cuentas";
 import {
   agregarComprobante,
@@ -13,9 +13,11 @@ import {
   enviar,
   leerRendicion,
   type CambiosComprobante,
+  type DatosRendicion,
 } from "@/lib/datos";
 import type { Persona } from "@/lib/sesion";
-import { EDITABLE, type Caja, type Catalogos, type Comprobante, type Rendicion } from "@/lib/tipos";
+import { enlacesDeArchivos, leer, subir } from "@/lib/subida";
+import { EDITABLE, type Archivo, type Caja, type Catalogos, type Comprobante, type Rendicion } from "@/lib/tipos";
 import { ConSesion } from "../marco";
 import { tituloRendicion } from "../mis-rendiciones";
 import { Aviso, BarraConsumo, Estado, Tarjeta, botonPrincipal, botonSecundario, campo } from "../piezas";
@@ -31,11 +33,29 @@ export function VistaRendicion() {
   );
 }
 
-type Datos = { rendicion: Rendicion; caja: Caja | null; comprobantes: Comprobante[] };
+/** Un archivo en camino, mientras esta pantalla lo sube y espera su lectura. */
+type Subida = {
+  clave: string;
+  nombre: string;
+  estado: "subiendo" | "leyendo" | "listo" | "error";
+  error?: string;
+};
+
+/** Cuántos archivos se suben y leen a la vez. */
+const EN_PARALELO = 3;
+
+const leyendo = (a: Archivo) => a.estado_lectura === "pendiente" || a.estado_lectura === "procesando";
 
 function HojaRendicion({ id, persona }: { id: string; persona: Persona }) {
   const { catalogos, error: errorCatalogos } = useCatalogos();
-  const [datos, setDatos] = useState<Datos | null>(null);
+  const [datos, setDatos] = useState<DatosRendicion | null>(null);
+  const [subidas, setSubidas] = useState<Subida[]>([]);
+  const datosActuales = useRef(datos);
+  useEffect(() => {
+    datosActuales.current = datos;
+  }, [datos]);
+  // Archivos cuya lectura ya pidió esta pantalla: no se piden dos veces.
+  const pedidos = useRef(new Set<string>());
   const [error, setError] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   // Sube cuando un guardado falla: las celdas se rearman con el valor que
@@ -55,14 +75,46 @@ function HojaRendicion({ id, persona }: { id: string; persona: Persona }) {
     cargar();
   }, [cargar]);
 
+  const pedirLectura = useCallback(
+    async (archivoId: string) => {
+      pedidos.current.add(archivoId);
+      try {
+        await leer(archivoId);
+      } finally {
+        await cargar();
+      }
+    },
+    [cargar],
+  );
+
+  // Lo que quedó subido pero sin leer (se cerró la pestaña, se cortó la señal
+  // o se capturó en otro equipo) se lee al abrir la rendición.
+  const editableAhora = !!datos && datos.rendicion.responsable_id === persona.id && EDITABLE.includes(datos.rendicion.estado);
+  useEffect(() => {
+    if (!datos || !editableAhora) return;
+    for (const a of datos.archivos) {
+      if (a.estado_lectura === "pendiente" && !pedidos.current.has(a.id)) pedirLectura(a.id).catch(() => {});
+    }
+  }, [datos, editableAhora, pedirLectura]);
+
+  // Mientras el servidor lee algo, se vuelve a mirar cada pocos segundos: la
+  // lectura pudo pedirla otra pestaña u otro equipo.
+  const hayLectura = !!datos?.archivos.some(leyendo);
+  useEffect(() => {
+    if (!hayLectura) return;
+    const t = setInterval(cargar, 4000);
+    return () => clearInterval(t);
+  }, [hayLectura, cargar]);
+
   if (error && !datos) return <Aviso>{error}</Aviso>;
   if (errorCatalogos) return <Aviso>{errorCatalogos}</Aviso>;
   if (!datos || !catalogos) return <p className="text-texto-3" role="status">Cargando…</p>;
 
-  const { rendicion: r, caja, comprobantes } = datos;
+  const { rendicion: r, caja, comprobantes, archivos } = datos;
   const editable = r.responsable_id === persona.id && EDITABLE.includes(r.estado);
   const c = cuentas(comprobantes, r.monto, r.no_sustentan ?? []);
   const incompletas = comprobantes.filter((x) => faltan(x).length > 0).length;
+  const porLeer = archivos.filter(leyendo).length;
 
   const ejecutar = async (accion: () => Promise<void>) => {
     setError(null);
@@ -89,12 +141,47 @@ function HojaRendicion({ id, persona }: { id: string; persona: Persona }) {
 
   const agregar = () =>
     ejecutar(async () => {
-      // En un memo, quien gasta es quien rinde: área y solicitante salen solos.
-      const nueva = await agregarComprobante(
-        r.id,
-        r.tipo === "memo" ? { area_id: persona.area_id, solicitante: persona.nombre } : {},
-      );
+      const nueva = await agregarComprobante(r.id, herencia(comprobantes, r.tipo, persona));
       setDatos((d) => d && { ...d, comprobantes: [...d.comprobantes, nueva] });
+    });
+
+  const cambiarSubida = (clave: string, cambios: Partial<Subida>) =>
+    setSubidas((l) => l.map((s) => (s.clave === clave ? { ...s, ...cambios } : s)));
+
+  const recibir = async (lista: File[]) => {
+    if (!lista.length) return;
+    setError(null);
+    const nuevas = lista.map((f) => ({ archivo: f, clave: crypto.randomUUID() }));
+    setSubidas((l) => [
+      ...l.filter((s) => s.estado !== "listo"),
+      ...nuevas.map(({ archivo, clave }) => ({ clave, nombre: archivo.name, estado: "subiendo" as const })),
+    ]);
+    // Lo que se hereda se calcula una vez: todo el lote va al mismo proyecto.
+    const base = herencia(datosActuales.current?.comprobantes ?? [], r.tipo, persona);
+    const cola = [...nuevas];
+    const trabajador = async () => {
+      for (let n = cola.shift(); n; n = cola.shift()) {
+        let archivoId: string | null = null;
+        try {
+          archivoId = await subir(r.id, n.archivo, base);
+          pedidos.current.add(archivoId);
+          cambiarSubida(n.clave, { estado: "leyendo" });
+          await cargar(); // la fila aparece ya, con «Leyendo…»
+          await leer(archivoId);
+          cambiarSubida(n.clave, { estado: "listo" });
+        } catch (e) {
+          cambiarSubida(n.clave, { estado: "error", error: (e as Error).message });
+        }
+        if (archivoId) await cargar();
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(EN_PARALELO, nuevas.length) }, trabajador));
+  };
+
+  const releer = (archivoId: string) =>
+    ejecutar(async () => {
+      setDatos((d) => d && { ...d, archivos: d.archivos.map((a) => (a.id === archivoId ? { ...a, estado_lectura: "procesando" } : a)) });
+      await pedirLectura(archivoId);
     });
 
   const mandar = () => {
@@ -137,7 +224,7 @@ function HojaRendicion({ id, persona }: { id: string; persona: Persona }) {
         <div className="mt-4">
           <BarraConsumo gastado={c.gastado} monto={aNumero(r.monto)} consumo={c.consumo} />
         </div>
-        {c.porTipo.length > 0 && (
+        {c.porTipo.some((t) => t.tipo !== "SIN_TIPO") && (
           <Sustento r={r} porTipo={c.porTipo} catalogos={catalogos} editable={editable} onGuardar={guardarRendicion} />
         )}
       </Tarjeta>
@@ -148,24 +235,39 @@ function HojaRendicion({ id, persona }: { id: string; persona: Persona }) {
       <Tarjeta>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <h2 className="font-display text-lg font-semibold text-tinta">Comprobantes</h2>
-          {editable && (
-            <button type="button" onClick={agregar} className={botonSecundario}>
-              + Agregar comprobante
+          {editable && comprobantes.length > 0 && (
+            <button type="button" onClick={agregar} className="text-sm font-medium text-texto-2 underline">
+              + Agregar a mano, sin imagen
             </button>
           )}
         </div>
+        {editable && <ZonaDeSubida subidas={subidas} onArchivos={recibir} />}
         {comprobantes.length === 0 ? (
-          <p className="text-texto-2">
-            {editable ? "Todavía no hay comprobantes. Agrega el primero." : "Esta rendición no tiene comprobantes."}
+          <p className="mt-4 text-texto-2">
+            {editable ? (
+              <>
+                O si no tienes la imagen,{" "}
+                <button type="button" onClick={agregar} className="font-medium text-acento-texto underline">
+                  agrega un comprobante a mano
+                </button>
+                .
+              </>
+            ) : (
+              "Esta rendición no tiene comprobantes."
+            )}
           </p>
         ) : (
-          <Comprobantes
-            filas={comprobantes}
-            catalogos={catalogos}
-            editable={editable}
-            intento={intento}
-            onGuardar={guardarFila}
-          />
+          <div className={editable ? "mt-5" : ""}>
+            <Comprobantes
+              filas={comprobantes}
+              archivos={archivos}
+              catalogos={catalogos}
+              editable={editable}
+              intento={intento}
+              onGuardar={guardarFila}
+              onReleer={releer}
+            />
+          </div>
         )}
       </Tarjeta>
 
@@ -175,13 +277,15 @@ function HojaRendicion({ id, persona }: { id: string; persona: Persona }) {
             type="button"
             onClick={mandar}
             className={botonPrincipal}
-            disabled={c.comprobantes === 0 || incompletas > 0}
+            disabled={c.comprobantes === 0 || incompletas > 0 || porLeer > 0}
           >
             Enviar a administración
           </button>
           <span className="text-sm text-texto-2">
-            {c.comprobantes === 0
-              ? "Agrega al menos un comprobante para poder enviar."
+            {porLeer > 0
+              ? `Leyendo ${porLeer} archivo${porLeer === 1 ? "" : "s"}…`
+              : c.comprobantes === 0
+              ? "Sube al menos un comprobante para poder enviar."
               : incompletas > 0
                 ? `Faltan datos en ${incompletas} comprobante${incompletas === 1 ? "" : "s"}.`
                 : r.version > 0
@@ -306,15 +410,15 @@ function Sustento({
     <div className="mt-5 border-t border-borde pt-4">
       <p className="text-sm font-medium text-texto-2">Qué sustenta</p>
       <div className="mt-2 flex flex-wrap gap-2">
-        {porTipo.map((t) => {
-          const sinTipo = t.tipo === "SIN_TIPO";
-          const cuenta = !sinTipo && !fuera.has(t.tipo);
+        {/* Lo que todavía no tiene tipo no se puede marcar: se ve recién cuando lo tenga. */}
+        {porTipo.filter((t) => t.tipo !== "SIN_TIPO").map((t) => {
+          const cuenta = !fuera.has(t.tipo);
           return (
             <button
               key={t.tipo}
               type="button"
               aria-pressed={cuenta}
-              disabled={!editable || sinTipo}
+              disabled={!editable}
               onClick={() =>
                 onGuardar({ no_sustentan: cuenta ? [...fuera, t.tipo] : [...fuera].filter((x) => x !== t.tipo) })
               }
@@ -401,22 +505,35 @@ type Columna = { etiqueta: string; ancho: string; celda: (c: Comprobante, editab
 
 function Comprobantes({
   filas,
+  archivos,
   catalogos,
   editable,
   intento,
   onGuardar,
+  onReleer,
 }: {
   filas: Comprobante[];
+  archivos: Archivo[];
   catalogos: Catalogos;
   editable: boolean;
   intento: number;
   onGuardar: (id: string, cambios: CambiosComprobante) => void;
+  onReleer: (archivoId: string) => void;
 }) {
+  const enlaces = useEnlaces(archivos);
+  const archivoDe = (c: Comprobante) => archivos.find((a) => a.id === c.archivo_id);
   // Cada celda se rearma cuando cambia su valor en la base o falla un guardado.
   const k = (c: Comprobante, campo: string, valor: unknown) => `${c.id}-${campo}-${String(valor)}-${intento}`;
   const num = (v: string) => (v ? Number(v) : null);
 
   const columnas: Columna[] = [
+    {
+      etiqueta: "Imagen",
+      ancho: "w-24",
+      celda: (c) => (
+        <Imagen archivo={archivoDe(c)} pagina={c.pagina} enlace={enlaces[c.archivo_id ?? ""]} editable={editable} onReleer={onReleer} />
+      ),
+    },
     {
       etiqueta: "Fecha",
       ancho: "w-36",
@@ -453,7 +570,6 @@ function Comprobantes({
           key={k(c, "numero", numeroCompleto(c))}
           valor={numeroCompleto(c)}
           etiqueta="N° de comprobante"
-          placeholder="F001-6384"
           disabled={!e}
           onGuardar={(v) => onGuardar(c.id, partirNumero(v))}
         />
@@ -517,7 +633,6 @@ function Comprobantes({
           valor={c.total == null ? "" : aNumero(c.total).toFixed(2)}
           etiqueta="Total"
           inputMode="decimal"
-          placeholder="0.00"
           disabled={!e}
           onGuardar={(v) => onGuardar(c.id, { total: v === "" ? null : aNumero(v) })}
         />
@@ -527,11 +642,12 @@ function Comprobantes({
 
   const pie = (c: Comprobante) => {
     const f = faltan(c);
+    const a = archivoDe(c);
     return (
       <div className="flex flex-wrap items-center gap-2">
         {c.descartado ? (
           <span className="text-xs font-semibold text-texto-3">Descartado</span>
-        ) : f.length > 0 ? (
+        ) : a && leyendo(a) ? null : f.length > 0 ? (
           <span className="text-xs font-semibold text-aviso">Falta {f.join(", ")}</span>
         ) : null}
         {c.observacion && <span className="text-xs font-semibold text-peligro">Obs.: {c.observacion}</span>}
@@ -595,5 +711,171 @@ function Comprobantes({
         ))}
       </ul>
     </>
+  );
+}
+
+/** Enlaces firmados a las imágenes de la rendición, pedidos de una vez. */
+function useEnlaces(archivos: Archivo[]): Record<string, string> {
+  const [enlaces, setEnlaces] = useState<Record<string, string>>({});
+  const rutas = archivos.filter((a) => a.ruta).map((a) => `${a.id}:${a.ruta}`).join("|");
+  useEffect(() => {
+    if (!rutas) return;
+    let vigente = true;
+    const pares = rutas.split("|").map((p) => p.split(":") as [string, string]);
+    enlacesDeArchivos(pares.map(([, ruta]) => ruta))
+      .then((urls) => vigente && setEnlaces(Object.fromEntries(pares.map(([id], i) => [id, urls[i]]))))
+      .catch(() => {});
+    return () => {
+      vigente = false;
+    };
+  }, [rutas]);
+  return enlaces;
+}
+
+function Imagen({
+  archivo,
+  pagina,
+  enlace,
+  editable,
+  onReleer,
+}: {
+  archivo: Archivo | undefined;
+  pagina: number;
+  enlace: string | undefined;
+  editable: boolean;
+  onReleer: (archivoId: string) => void;
+}) {
+  if (!archivo) return <span className="text-xs text-texto-3">A mano</span>;
+  const pdf = archivo.tipo_mime === "application/pdf";
+  return (
+    <div className="space-y-1">
+      {enlace ? (
+        <a
+          href={pdf ? `${enlace}#page=${pagina}` : enlace}
+          target="_blank"
+          rel="noreferrer"
+          className="block"
+          title="Ver la imagen completa"
+        >
+          {pdf ? (
+            <span className="flex h-12 w-16 items-center justify-center rounded-chico border border-borde-2 bg-superficie-2 text-xs font-semibold text-texto-2">
+              PDF{pagina > 1 ? ` · ${pagina}` : ""}
+            </span>
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element -- enlace firmado y temporal: no pasa por el optimizador
+            <img src={enlace} alt="Comprobante" className="h-12 w-16 rounded-chico border border-borde-2 object-cover" />
+          )}
+        </a>
+      ) : (
+        <span className="block h-12 w-16 animate-pulse rounded-chico bg-superficie-2" />
+      )}
+      {leyendo(archivo) ? (
+        <span className="block text-xs font-semibold text-info" role="status">
+          Leyendo…
+        </span>
+      ) : archivo.estado_lectura === "fallido" ? (
+        <span className="block text-xs text-peligro" title={archivo.error ?? ""}>
+          No se leyó.{" "}
+          {editable && (
+            <button type="button" className="font-semibold underline" onClick={() => onReleer(archivo.id)}>
+              Reintentar
+            </button>
+          )}
+        </span>
+      ) : archivo.error ? (
+        <span className="block text-xs text-aviso" title={archivo.error}>
+          Sin comprobante
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function ZonaDeSubida({ subidas, onArchivos }: { subidas: Subida[]; onArchivos: (l: File[]) => void }) {
+  const [encima, setEncima] = useState(false);
+  const elegir = useRef<HTMLInputElement>(null);
+  const camara = useRef<HTMLInputElement>(null);
+  const tomar = (l: FileList | null) => l && onArchivos([...l]);
+  const listos = subidas.filter((s) => s.estado === "listo").length;
+
+  return (
+    <div
+      onDragOver={(e) => {
+        e.preventDefault();
+        setEncima(true);
+      }}
+      onDragLeave={() => setEncima(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setEncima(false);
+        tomar(e.dataTransfer.files);
+      }}
+      className={`rounded-medio border-2 border-dashed p-5 text-center transition ${
+        encima ? "border-acento bg-acento-suave" : "border-borde-2"
+      }`}
+    >
+      <p className="font-medium text-tinta">Sube las fotos o PDF de tus comprobantes</p>
+      <p className="mt-1 text-sm text-texto-2">
+        Se leen solos: fecha, número, RUC, proveedor, total y concepto. Tú solo revisas.
+        <span className="hidden md:inline"> También puedes arrastrarlos aquí.</span>
+      </p>
+      <div className="mt-4 flex flex-wrap justify-center gap-2">
+        <button type="button" onClick={() => camara.current?.click()} className={`${botonPrincipal} md:hidden`}>
+          Tomar foto
+        </button>
+        <button type="button" onClick={() => elegir.current?.click()} className={`${botonSecundario} md:hidden`}>
+          Elegir fotos o PDF
+        </button>
+        <button type="button" onClick={() => elegir.current?.click()} className={`${botonPrincipal} hidden md:inline-block`}>
+          Elegir fotos o PDF
+        </button>
+      </div>
+      <input
+        ref={camara}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        aria-label="Tomar foto"
+        onChange={(e) => {
+          tomar(e.target.files);
+          e.target.value = "";
+        }}
+      />
+      <input
+        ref={elegir}
+        type="file"
+        accept="image/*,application/pdf"
+        multiple
+        className="hidden"
+        aria-label="Elegir fotos o PDF"
+        onChange={(e) => {
+          tomar(e.target.files);
+          e.target.value = "";
+        }}
+      />
+      {subidas.some((s) => s.estado !== "listo") && (
+        <ul className="mx-auto mt-4 max-w-md space-y-1 text-left text-sm">
+          {subidas
+            .filter((s) => s.estado !== "listo")
+            .map((s) => (
+              <li key={s.clave} className="flex items-baseline justify-between gap-3">
+                <span className="truncate text-texto-2">{s.nombre}</span>
+                <span
+                  className={`shrink-0 text-xs font-semibold ${s.estado === "error" ? "text-peligro" : "text-info"}`}
+                  role={s.estado === "error" ? "alert" : "status"}
+                >
+                  {s.estado === "subiendo" ? "Subiendo…" : s.estado === "leyendo" ? "Leyendo…" : s.error}
+                </span>
+              </li>
+            ))}
+        </ul>
+      )}
+      {listos > 0 && !subidas.some((s) => s.estado === "subiendo" || s.estado === "leyendo") && (
+        <p className="mt-3 text-sm text-exito" role="status">
+          {listos === 1 ? "1 archivo leído." : `${listos} archivos leídos.`} Revisa lo que falte en la tabla.
+        </p>
+      )}
+    </div>
   );
 }
