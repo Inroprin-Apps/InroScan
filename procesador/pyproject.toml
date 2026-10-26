@@ -1,0 +1,29 @@
+[project]
+name = "inroscan-procesador"
+version = "0.1.0"
+description = "Lee los comprobantes que suben las personas y genera las hojas de cada rendición."
+requires-python = ">=3.11"
+# Las dependencias pesadas (OCR, Supabase, Google, Gemini) se agregan en su
+# fase. Las reglas de lectura no necesitan ninguna.
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
