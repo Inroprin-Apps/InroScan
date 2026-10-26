@@ -29,6 +29,8 @@ export type Comprobante = {
   total: number | string | null;
   moneda: "PEN" | "USD";
   via: "ocr" | "clasificador" | "ia" | "manual" | null;
+  /** Lo que dejó la lectura; `campos` son los que llenó ella. */
+  confianza: { campos?: string[] } | null;
   descartado: boolean;
   observacion: string;
   creado_en: string;

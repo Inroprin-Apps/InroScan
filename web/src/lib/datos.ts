@@ -94,16 +94,21 @@ export async function crearReposicion(caja: Caja, uid: string): Promise<string> 
   return exigir(r).id;
 }
 
-export type DatosRendicion = { rendicion: Rendicion; caja: Caja | null; comprobantes: Comprobante[]; archivos: Archivo[] };
+export type DatosRendicion = {
+  rendicion: Rendicion & { responsable: { nombre: string; correo: string } | null };
+  caja: Caja | null;
+  comprobantes: Comprobante[];
+  archivos: Archivo[];
+};
 
 export async function leerRendicion(id: string): Promise<DatosRendicion> {
   const db = supabase();
   const [rendicion, comprobantes, archivos] = await Promise.all([
-    db.from("rendiciones").select("*").eq("id", id).single(),
+    db.from("rendiciones").select("*, responsable:personas(nombre, correo)").eq("id", id).single(),
     db.from("comprobantes").select("*").eq("rendicion_id", id).order("creado_en").order("pagina"),
     db.from("archivos").select("id, ruta, tipo_mime, estado_lectura, error").eq("rendicion_id", id),
   ]);
-  const r = exigir(rendicion) as Rendicion;
+  const r = exigir(rendicion) as DatosRendicion["rendicion"];
   let caja: Caja | null = null;
   if (r.caja_id != null) {
     caja = exigir(await db.from("cajas").select("*").eq("id", r.caja_id).single()) as Caja;
@@ -121,6 +126,7 @@ export type CambiosComprobante = Partial<
     Comprobante,
     | "fecha" | "tipo_comprobante_id" | "serie" | "numero" | "ruc" | "proveedor" | "proyecto_id"
     | "area_id" | "solicitante" | "concepto_id" | "descripcion" | "total" | "moneda" | "descartado"
+    | "observacion"
   >
 >;
 
@@ -151,5 +157,56 @@ export async function cambiarRendicion(
 /** La base sube la versión y bloquea la edición hasta que administración la revise. */
 export async function enviar(id: string): Promise<Rendicion> {
   const r = await supabase().from("rendiciones").update({ estado: "enviada" }).eq("id", id).select("*").single();
+  return exigir(r) as Rendicion;
+}
+
+/** El mismo cambio a varias filas a la vez (asignar proyecto, descartar…). */
+export async function cambiarComprobantes(ids: string[], cambios: CambiosComprobante): Promise<Comprobante[]> {
+  const r = await supabase().from("comprobantes").update(cambios).in("id", ids).select("*");
+  return exigir(r) as Comprobante[];
+}
+
+export type EntradaHistorial = {
+  id: number;
+  tabla: "rendiciones" | "comprobantes" | "archivos";
+  fila: string;
+  accion: "crear" | "cambiar";
+  cambios: Record<string, unknown>;
+  actor: string | null;
+  en: string;
+};
+
+export async function leerHistorial(rendicionId: string): Promise<EntradaHistorial[]> {
+  const r = await supabase()
+    .from("historial")
+    .select("id, tabla, fila, accion, cambios, actor, en")
+    .eq("rendicion_id", rendicionId)
+    .order("en", { ascending: false })
+    .limit(300);
+  return exigir(r) as EntradaHistorial[];
+}
+
+/** Comprobantes de esta rendición que también aparecen (mismo RUC y número) en otra. */
+export async function leerRepetidos(rendicionId: string): Promise<Map<string, string>> {
+  const r = await supabase()
+    .from("comprobantes_repetidos")
+    .select("id, repetido_en")
+    .eq("rendicion_id", rendicionId);
+  return new Map((exigir(r) as { id: string; repetido_en: string }[]).map((x) => [x.id, x.repetido_en]));
+}
+
+/** Nombres de personas por id. Quien no es administración solo se ve a sí mismo. */
+export async function leerNombres(): Promise<Map<string, string>> {
+  const r = await supabase().from("personas").select("id, nombre, correo");
+  return new Map((exigir(r) as { id: string; nombre: string; correo: string }[]).map((p) => [p.id, p.nombre || p.correo]));
+}
+
+/** Administración devuelve una rendición con observaciones o la aprueba. */
+export async function decidirRendicion(
+  id: string,
+  estado: "observada" | "aprobada",
+  observacion: string,
+): Promise<Rendicion> {
+  const r = await supabase().from("rendiciones").update({ estado, observacion }).eq("id", id).select("*").single();
   return exigir(r) as Rendicion;
 }

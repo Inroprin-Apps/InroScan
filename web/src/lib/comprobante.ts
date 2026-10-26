@@ -63,3 +63,48 @@ export function herencia(
   }
   return { proyecto_id: ultima?.proyecto_id ?? null, area_id: ultima?.area_id ?? null, solicitante: ultima?.solicitante ?? "" };
 }
+
+const CORTOS: Record<string, string> = {
+  FACTURA: "Factura",
+  RHE: "Rec. honorarios",
+  BOLETA: "Boleta",
+  PLANILLA_MOVILIDAD: "Planilla movilidad",
+  VOUCHER: "Voucher",
+  TICKET: "Ticket",
+  RECIBO: "Recibo",
+  DJ: "Decl. jurada",
+  NOTA_CREDITO: "Nota de crédito",
+};
+
+/** El nombre corto de un tipo, para fichas y celdas angostas. */
+export const tipoCorto = (id: string | null, nombre?: string) => (id ? (CORTOS[id] ?? nombre ?? id) : "Sin tipo");
+
+export type EstadoFila = {
+  clave: "descartado" | "leyendo" | "fallido" | "observado" | "falta" | "repetido" | "listo";
+  texto: string;
+  detalle: string;
+  /** Pide la atención de quien rinde antes de enviar. */
+  porRevisar: boolean;
+};
+
+/** En qué está una fila, en el orden en que importa: lo que bloquea primero. */
+export function estadoFila(
+  c: FilaParaRevisar & { observacion?: string; via?: string | null },
+  archivo?: { estado_lectura: string; error: string | null },
+  repetido?: boolean,
+): EstadoFila {
+  if (c.descartado) return { clave: "descartado", texto: "Descartado", detalle: "", porRevisar: false };
+  if (archivo && (archivo.estado_lectura === "pendiente" || archivo.estado_lectura === "procesando")) {
+    return { clave: "leyendo", texto: "Leyendo…", detalle: "", porRevisar: false };
+  }
+  if (archivo?.estado_lectura === "fallido") {
+    return { clave: "fallido", texto: "No se leyó", detalle: archivo.error ?? "", porRevisar: true };
+  }
+  if (c.observacion) return { clave: "observado", texto: "Observado", detalle: c.observacion, porRevisar: true };
+  const f = faltan(c);
+  if (f.length) {
+    return { clave: "falta", texto: f.length === 1 ? `Falta ${f[0]}` : `Faltan ${f.length} datos`, detalle: f.join(", "), porRevisar: true };
+  }
+  if (repetido) return { clave: "repetido", texto: "Repetido", detalle: "Ya está en otra rendición", porRevisar: true };
+  return { clave: "listo", texto: "Listo", detalle: c.via === "ia" ? "Leído por IA" : "", porRevisar: false };
+}

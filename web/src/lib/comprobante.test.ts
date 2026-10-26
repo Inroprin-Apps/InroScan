@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { faltan, herencia, numeroCompleto, partirNumero } from "./comprobante";
+import { estadoFila, faltan, herencia, numeroCompleto, partirNumero, tipoCorto } from "./comprobante";
 
 describe("número de comprobante", () => {
   it("separa serie y número, conservando lo que se tecleó", () => {
@@ -75,5 +75,27 @@ describe("herencia de una fila nueva", () => {
   it("sin filas: en blanco (en un memo, los datos de quien viaja)", () => {
     expect(herencia([], "caja", persona)).toEqual({ proyecto_id: null, area_id: null, solicitante: "" });
     expect(herencia([], "memo", persona)).toEqual({ proyecto_id: null, area_id: 3, solicitante: "Ana Pérez" });
+  });
+});
+
+describe("estado de una fila", () => {
+  const completa = {
+    fecha: "2026-10-20", tipo_comprobante_id: "BOLETA", numero: "135", total: "45.50",
+    proyecto_id: 1, concepto_id: 1, descartado: false, observacion: "", via: "ia",
+  };
+  it("lo que bloquea va primero", () => {
+    expect(estadoFila({ ...completa, descartado: true }).clave).toBe("descartado");
+    expect(estadoFila(completa, { estado_lectura: "procesando", error: null }).clave).toBe("leyendo");
+    expect(estadoFila(completa, { estado_lectura: "fallido", error: "x" })).toMatchObject({ clave: "fallido", porRevisar: true });
+    expect(estadoFila({ ...completa, observacion: "Falta la boleta" })).toMatchObject({ clave: "observado", detalle: "Falta la boleta" });
+    expect(estadoFila({ ...completa, proyecto_id: null })).toMatchObject({ texto: "Falta proyecto", porRevisar: true });
+    expect(estadoFila({ ...completa, proyecto_id: null, fecha: null }).texto).toBe("Faltan 2 datos");
+    expect(estadoFila(completa, undefined, true).clave).toBe("repetido");
+    expect(estadoFila(completa)).toEqual({ clave: "listo", texto: "Listo", detalle: "Leído por IA", porRevisar: false });
+  });
+  it("nombres cortos de tipo", () => {
+    expect(tipoCorto("FACTURA")).toBe("Factura");
+    expect(tipoCorto(null)).toBe("Sin tipo");
+    expect(tipoCorto("NUEVO", "NUEVO TIPO")).toBe("NUEVO TIPO");
   });
 });
