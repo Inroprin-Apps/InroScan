@@ -11,6 +11,14 @@ create role service_role nologin noinherit bypassrls;
 
 grant usage on schema public to anon, authenticated, service_role;
 
+-- Como en Supabase: todo lo que se crea en public nace con permisos para
+-- anon y authenticated, funciones incluidas. Sin esto las pruebas pasaban
+-- con una función del procesador que en el Supabase real cualquier persona
+-- con sesión podía llamar.
+alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
+alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;
+alter default privileges in schema public grant execute on functions to anon, authenticated, service_role;
+
 create schema auth;
 grant usage on schema auth to anon, authenticated, service_role;
 
