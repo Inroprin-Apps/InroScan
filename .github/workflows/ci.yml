@@ -26,6 +26,7 @@ jobs:
       # typegen primero: LayoutProps y PageProps son tipos que genera Next.js,
       # y sin build previo no existen.
       - run: npm run typecheck
+      - run: npm test
       - run: npm run build
 
   procesador:
