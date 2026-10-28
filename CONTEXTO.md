@@ -38,14 +38,15 @@ un puente temporal: es *el* sistema.
   `f0c3fcc`). Lo que se aprendió con ella está en §6.
 - **26-oct-2026:** se diseñó y construyó la actual (Next.js + Supabase), se
   cerró el diseño con barra lateral en un lienzo aprobado por el usuario y se
-  retiró la anterior. `/inroscan/` redirige a `/inroscan/web/`.
+  retiró la anterior. `/inroscan/` redirige a `/InroScan/web/`.
+- **28-oct-2026:** el repositorio pasó a `Inroprin-Apps/InroScan` (antes `tsdonoso-beep/inroscan`, donde queda el historial previo). La app se publica en <https://inroprin-apps.github.io/InroScan/web/>.
 
 ---
 
 ## 2. Cómo está armado
 
 ```
-Teléfono / PC — web/ (Next.js estático en GitHub Pages, /inroscan/web/)
+Teléfono / PC — web/ (Next.js estático en GitHub Pages, /InroScan/web/)
   ├─ cola en IndexedDB: lo capturado espera ahí si no hay señal
   ├─ service worker: la app abre sin señal; copia local de lo último visto
   └─ Supabase
@@ -124,7 +125,7 @@ base para la generación de la hoja en Drive si se hace desde una PC.
    verificando su MD5, y al aprobar las borra de Supabase solo si la copia en
    Drive coincide. Todo cuelga de una **carpeta madre** que se elige al
    conectar (hoy, INROSCAN › Rendiciones, en una unidad compartida). Falta del lado de Google: la URI de retorno
-   `…/inroscan/web/drive/` en el cliente OAuth, el secreto
+   `…/InroScan/web/drive/` en el cliente OAuth, el secreto
    `GOOGLE_CLIENT_SECRET` en Supabase, y conectar desde Administración › Drive
    pegando el enlace de la carpeta madre. (La API de Drive ya está activada.)
 2. **Validar la tabla de conceptos** (MEDICINA sin definir; hay propuestas por

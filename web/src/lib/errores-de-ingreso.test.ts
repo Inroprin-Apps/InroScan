@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { mensajeDeIngreso, paramsDeRetorno } from "./errores-de-ingreso";
 
 const retorno = (url: string) => mensajeDeIngreso(paramsDeRetorno(url));
-const BASE = "https://tsdonoso-beep.github.io/inroscan/web/";
+const BASE = "https://inroprin-apps.github.io/InroScan/web/";
 
 describe("mensajes del retorno de Google", () => {
   it("sin error no hay mensaje", () => {

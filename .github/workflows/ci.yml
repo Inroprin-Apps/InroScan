@@ -4,7 +4,7 @@ name: CI
 # publicar); acá no se repite.
 on:
   push:
-    branches-ignore: [main, claude/vigilant-wozniak-8cgqsw]
+    branches-ignore: [main]
   pull_request:
   workflow_call:
 

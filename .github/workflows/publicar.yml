@@ -1,12 +1,12 @@
 name: Publicar
 
-# Publica InroScan en GitHub Pages bajo /inroscan/web/. La raíz solo
+# Publica InroScan en GitHub Pages bajo /InroScan/web/. La raíz solo
 # redirige ahí: la app anterior se retiró el 26-oct-2026.
 # Requiere que en Settings › Pages la fuente sea «GitHub Actions», y que el
 # entorno github-pages permita desplegar desde estas ramas.
 on:
   push:
-    branches: [main, claude/vigilant-wozniak-8cgqsw]
+    branches: [main]
   workflow_dispatch:
 
 permissions:

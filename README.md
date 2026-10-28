@@ -5,8 +5,8 @@ de viáticos**. Se captura el comprobante (foto o PDF, desde el teléfono o la
 PC), se lee solo, la persona revisa lo que falte y lo envía; administración lo
 valida con la imagen al lado.
 
-Publicado en <https://tsdonoso-beep.github.io/inroscan/web/>. La dirección
-anterior, `/inroscan/`, redirige ahí.
+Publicado en <https://inroprin-apps.github.io/InroScan/web/>. La raíz del sitio
+redirige ahí.
 
 > El contexto completo —decisiones con su razón, lo aprendido con documentos
 > reales y lo que queda abierto— está en **[CONTEXTO.md](CONTEXTO.md)**.
@@ -15,7 +15,7 @@ anterior, `/inroscan/`, redirige ahí.
 
 | Parte | Qué hace |
 |---|---|
-| `web/` | La app: Next.js con exportación estática, en GitHub Pages bajo `/inroscan/web/`. Instalable en el teléfono y usable sin señal. |
+| `web/` | La app: Next.js con exportación estática, en GitHub Pages bajo `/InroScan/web/`. Instalable en el teléfono y usable sin señal. |
 | `supabase/migrations/` | La base: tablas, permisos por fila, historial de cambios y catálogos. |
 | `supabase/functions/leer/` | La lectura de cada foto o PDF, apenas se sube (Gemini; la clave es el secreto `GEMINI_API_KEY` de Supabase). |
 | `supabase/pruebas/` | Permisos por fila verificados contra un Postgres de verdad. |
@@ -26,7 +26,7 @@ anterior, `/inroscan/`, redirige ahí.
 
 ```bash
 cd web && npm ci
-npm run dev          # http://localhost:3000/inroscan/web/
+npm run dev          # http://localhost:3000/InroScan/web/
 npm run lint && npm run typecheck && npm test
 
 supabase/pruebas/correr.sh                       # permisos por fila (Postgres 16)
